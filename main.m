@@ -1,15 +1,18 @@
 clear
 clc
+%%
 close all
-
-runKDE = true;
+%%
+runKDE = false;
 runGUE = false;
 runEnGMM = true;
+screenshotPlots = false;
+compileToVideo = false;
 
 % Gravitational constant
 mu = 0.012150584269940; 
 
-Nsamples = 100;
+nSamples = 100;
 displaySamples = 100;
 
 % Specify initial mean for object CRTBP non-dimensionalized coordinates
@@ -21,6 +24,11 @@ P_initial = 1.0e-08 *[ ...
    0.000343197998120   0.000112485276059  -0.000931574297640   0.950650788374193   0.004879599683572   0.000839738344685
   -0.000801894296500   0.002893878948354   0.000434803811832   0.004879599683572   0.955575624017479  -0.002913896437441
   -0.000076851751508  -0.000038999497288   0.000042975146838   0.000839738344685  -0.002913896437441   0.954675354567578];
+
+ICs = mvnrnd(mu_initial, P_initial, nSamples);
+
+measurementInterval = 0.05;
+frameInterval = 0.001;
 
 % set up initial time and final time (non dimensional)
 t0 = 0;      
@@ -34,11 +42,11 @@ P0     = {P_initial};
               
 dH = 1.455021851351014; 
 
-[Y0, Y] = PropagateSamples(Nsamples, t0, tf, mu_initial, P_initial);
+[t, Y] = PropagateSamples(ICs, t0, frameInterval, measurementInterval);
 
 %%
-writematrix(Y', fullfile("Data","PropagatedStates.csv"));
-writematrix(Y0', fullfile("Data","InitialStates.csv"));
+% writematrix(Y', fullfile("Data","PropagatedStates.csv"));
+% writematrix(Y0', fullfile("Data","InitialStates.csv"));
 %%
 %%%%% KDE
 if runKDE
@@ -77,48 +85,79 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% PLOTS
-
-% DATA POINTS
-figure(1)
-subplot(2,2,1)
-plot(Y(1,1:displaySamples),Y(2,1:displaySamples),'.','color',[.5 .5 .5]);
-title("XY")
-xlabel('x-Position [LU]')
-ylabel('y-Position [LU]')
-hold on
-
-subplot(2,2,2)
-plot(Y(1,1:displaySamples),Y(3,1:displaySamples),'.','color',[.5 .5 .5]);
-title("XZ")
-xlabel('x-Position [LU]')
-ylabel('z-Position [LU]')
-hold on
-
-subplot(2,2,3)
-plot(Y(2,1:displaySamples),Y(3,1:displaySamples),'.','color',[.5 .5 .5]);
-title("YZ")
-xlabel('y-Position [LU]')
-ylabel('z-Position [LU]')
-hold on
-
-subplot(2,2,4);
-scatter3(Y(1,1:displaySamples), Y(2,1:displaySamples),Y(3,1:displaySamples),'.','color',[.5 .5 .5]);
-
-% % KDE 
-if runKDE
-    subplot(2,2,1);
-    contour(reshape(XY(:,1),Nks,Nks),reshape(XY(:,2),Nks,Nks),reshape(Fxy,Nks,Nks), ...
-        'Color','b','LineWidth',2);
+animationImagesFolder = 'Plots';
+f = figure('Units', 'pixels', 'Position', [100 100 800 600]);
+for tIdx = 1:numel(Y(1,1,:))
+    % DATA POINTS
     
-    subplot(2,2,2);
-    contour(reshape(XZ(:,1),Nks,Nks),reshape(XZ(:,2),Nks,Nks),reshape(Fxz,Nks,Nks), ...
-       'Color','b','LineWidth',2);
+    subplot(2,2,1)
+    plot(Y(1:displaySamples,1,tIdx),Y(1:displaySamples,2,tIdx),'.','color',[.5 .5 .5]);
+    title("XY")
+    xlabel('x-Position [LU]')
+    ylabel('y-Position [LU]')
+    grid on
+    hold off
     
-    subplot(2,2,3);
-    contour(reshape(YZ(:,1),Nks,Nks),reshape(YZ(:,2),Nks,Nks),reshape(Fyz,Nks,Nks), ...
-        'Color','b','LineWidth',2);
+    subplot(2,2,2)
+    plot(Y(1:displaySamples,1,tIdx),Y(1:displaySamples,3,tIdx),'.','color',[.5 .5 .5]);
+    title("XZ")
+    xlabel('x-Position [LU]')
+    ylabel('z-Position [LU]')
+    grid on
+    hold off
+    
+    subplot(2,2,3)
+    plot(Y(1:displaySamples,2,tIdx),Y(1:displaySamples,3,tIdx),'.','color',[.5 .5 .5]);
+    title("YZ")
+    xlabel('y-Position [LU]')
+    ylabel('z-Position [LU]')
+    grid on
+    hold off
+    
+    subplot(2,2,4);
+    hold on
+    xmean = mean(Y(1:idx,1,end));
+    ymean = mean(Y(1:idx,2,end));
+    zmean = mean(Y(1:idx,3,end));
+    xlim([xmean-margin, xmean+margin]);
+    ylim([ymean-margin, ymean+margin]);
+    zlim([zmean-margin, zmean+margin]);
+    for idx = 1:nSamples
+        plot3(squeeze(Y(idx,1,1:tIdx)), squeeze(Y(idx,2,1:tIdx)), squeeze(Y(idx,3,1:tIdx)),'-','color',[.5 .5 .5]);
+       
+    end
+    margin = 2*10^-4;
+    
+    view(45, 30);
+    
+    hold off
+    
+
+
+    % % KDE 
+    if runKDE
+        subplot(2,2,1);
+        contour(reshape(XY(:,1),Nks,Nks),reshape(XY(:,2),Nks,Nks),reshape(Fxy,Nks,Nks), ...
+            'Color','b','LineWidth',2);
+        
+        subplot(2,2,2);
+        contour(reshape(XZ(:,1),Nks,Nks),reshape(XZ(:,2),Nks,Nks),reshape(Fxz,Nks,Nks), ...
+           'Color','b','LineWidth',2);
+        
+        subplot(2,2,3);
+        contour(reshape(YZ(:,1),Nks,Nks),reshape(YZ(:,2),Nks,Nks),reshape(Fyz,Nks,Nks), ...
+            'Color','b','LineWidth',2);
+    end
+    
+    if screenshotPlots
+        set(gcf, 'Units', 'pixels', 'Position', [100 100 800 600]);
+        filename = fullfile(animationImagesFolder, sprintf('frame_%04d.png', tIdx));
+        frame = getframe(f);
+        imwrite(frame.cdata, filename);
+    end
+
+    pause(0.2)
 end
-
 % 
 % % GMM-UKF-EKF
 % figure(1)
@@ -141,3 +180,27 @@ end
 % xlabel('y-Position [LU]')
 % ylabel('z-Position [LU]')
 % hold off
+
+%% COMPILE TO VIDEO
+
+if compileToVideo
+    if isfile('trajectory_movie.mp4')
+        delete('trajectory_movie.mp4');
+    end
+        outputVideo = VideoWriter('trajectory_movie.mp4', 'MPEG-4');
+        outputVideo.FrameRate = 24;  % Adjust frame rate as desired
+        open(outputVideo);
+        
+        imageFiles = dir(fullfile(animationImagesFolder, 'frame_*.png'));
+        [~, idx] = sort({imageFiles.name});
+        imageFiles = imageFiles(idx);
+        
+        for k = 1:length(imageFiles)
+            img = imread(fullfile(animationImagesFolder, imageFiles(k).name));
+            writeVideo(outputVideo, img);
+        end
+        
+        close(outputVideo);
+        disp('Video saved as trajectory_movie.mp4');
+
+end
