@@ -2,10 +2,14 @@ clear
 clc
 close all
 
+runKDE = true;
+runGUE = false;
+runEnGMM = true;
+
 % Gravitational constant
 mu = 0.012150584269940; 
 
-Nsamples = 10000;
+Nsamples = 100;
 displaySamples = 100;
 
 % Specify initial mean for object CRTBP non-dimensionalized coordinates
@@ -30,49 +34,46 @@ P0     = {P_initial};
               
 dH = 1.455021851351014; 
 
-[Y0, Y] = PropagateInitialPDF(Nsamples, t0, tf, mu_initial, P_initial);
+[Y0, Y] = PropagateSamples(Nsamples, t0, tf, mu_initial, P_initial);
 
 %%
-writematrix(Y', "/Data/PropagatedStates.csv");
-writematrix(Y0', "/Data/InitialStates.csv");
+writematrix(Y', fullfile("Data","PropagatedStates.csv"));
+writematrix(Y0', fullfile("Data","InitialStates.csv"));
 %%
 %%%%% KDE
-Nks = 100;
-% XY
-xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
-yvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
-[XI,YI] = meshgrid(xvec',yvec');
-XY = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
-%Fxy = zeros(Nks^2,1);
-Fxy = ksdensity(Y([1,2],:)', XY);
-
-% XZ
-xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
-yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
-[XI,YI] = meshgrid(xvec',yvec');
-XZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
-Fxz = ksdensity(Y([1,3],:)', XZ);  
-%Fxz = zeros(Nks^2,1);
-
-% YZ
-xvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
-yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
-[XI,YI] = meshgrid(xvec',yvec');
-YZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
-Fyz = zeros(Nks^2,1);
-Fyz = ksdensity(Y([2,3],:)', YZ);
-
- 
+if runKDE
+    Nks = 100;
+    % XY
+    xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
+    yvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
+    [XI,YI] = meshgrid(xvec',yvec');
+    XY = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+    Fxy = ksdensity(Y([1,2],:)', XY);
+    
+    % XZ
+    xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
+    yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
+    [XI,YI] = meshgrid(xvec',yvec');
+    XZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+    Fxz = ksdensity(Y([1,3],:)', XZ);  
+    
+    % YZ
+    xvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
+    yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
+    [XI,YI] = meshgrid(xvec',yvec');
+    YZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+    Fyz = ksdensity(Y([2,3],:)', YZ);
+end
 
 
 %% GMM - UKF - EKF
-return
-
-tic
-[wf,mf,Pf] = prop_ptbp(t0,tf,w0,m0,P0,dH,Inf,[],mu);
-toc
-disp(['Number of components NEW = ',num2str(length(wf))])
-
+if runGUE
+    
+    tic
+    [wf,mf,Pf] = prop_ptbp(t0,tf,w0,m0,P0,dH,Inf,[],mu);
+    toc
+    disp(['Number of components NEW = ',num2str(length(wf))])
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% PLOTS
@@ -104,18 +105,19 @@ subplot(2,2,4);
 scatter3(Y(1,1:displaySamples), Y(2,1:displaySamples),Y(3,1:displaySamples),'.','color',[.5 .5 .5]);
 
 % % KDE 
-subplot(2,2,1);
-contour(reshape(XY(:,1),Nks,Nks),reshape(XY(:,2),Nks,Nks),reshape(Fxy,Nks,Nks), ...
-    'Color','b','LineWidth',2);
-
-subplot(2,2,2);
-contour(reshape(XZ(:,1),Nks,Nks),reshape(XZ(:,2),Nks,Nks),reshape(Fxz,Nks,Nks), ...
-   'Color','b','LineWidth',2);
-
-subplot(2,2,3);
-contour(reshape(YZ(:,1),Nks,Nks),reshape(YZ(:,2),Nks,Nks),reshape(Fyz,Nks,Nks), ...
-    'Color','b','LineWidth',2);
-
+if runKDE
+    subplot(2,2,1);
+    contour(reshape(XY(:,1),Nks,Nks),reshape(XY(:,2),Nks,Nks),reshape(Fxy,Nks,Nks), ...
+        'Color','b','LineWidth',2);
+    
+    subplot(2,2,2);
+    contour(reshape(XZ(:,1),Nks,Nks),reshape(XZ(:,2),Nks,Nks),reshape(Fxz,Nks,Nks), ...
+       'Color','b','LineWidth',2);
+    
+    subplot(2,2,3);
+    contour(reshape(YZ(:,1),Nks,Nks),reshape(YZ(:,2),Nks,Nks),reshape(Fyz,Nks,Nks), ...
+        'Color','b','LineWidth',2);
+end
 
 % 
 % % GMM-UKF-EKF
