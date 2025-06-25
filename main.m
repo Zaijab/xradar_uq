@@ -1,5 +1,141 @@
-% Doing Propogation
+clear
+clc
+close all
 
-% Put Something Here
+% Gravitational constant
+mu = 0.012150584269940; 
 
-x = zeros(10);
+Nsamples = 10000;
+displaySamples = 100;
+
+% Specify initial mean for object CRTBP non-dimensionalized coordinates
+mu_initial = [1.021339954388544 -0.000000045869005 -0.181619950369762 0.000000617839352 -0.101759879771430 0.000001049698173]'; % mean.rot.t0;  % mean of initial state (in rotating frame)
+P_initial = 1.0e-08 *[ ...
+   0.067741479217036  -0.000029214433641   0.000292500436172   0.000343197998120  -0.000801894296500  -0.000076851751508
+  -0.000029214433641   0.067949657828148  -0.000045655889447   0.000112485276059   0.002893878948354  -0.000038999497288
+   0.000292500436172  -0.000045655889447   0.067754170807105  -0.000931574297640   0.000434803811832   0.000042975146838
+   0.000343197998120   0.000112485276059  -0.000931574297640   0.950650788374193   0.004879599683572   0.000839738344685
+  -0.000801894296500   0.002893878948354   0.000434803811832   0.004879599683572   0.955575624017479  -0.002913896437441
+  -0.000076851751508  -0.000038999497288   0.000042975146838   0.000839738344685  -0.002913896437441   0.954675354567578];
+
+% set up initial time and final time (non dimensional)
+t0 = 0;      
+tf = 0.75103;
+
+% Initialize Condition is Gaussian
+nX     = 6;  
+w0     = {1};
+m0     = {mu_initial};
+P0     = {P_initial};
+              
+dH = 1.455021851351014; 
+
+[Y0, Y] = PropagateInitialPDF(Nsamples, t0, tf, mu_initial, P_initial);
+
+%%
+writematrix(Y', "/Data/PropagatedStates.csv");
+writematrix(Y0', "/Data/InitialStates.csv");
+%%
+%%%%% KDE
+Nks = 100;
+% XY
+xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
+yvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
+[XI,YI] = meshgrid(xvec',yvec');
+XY = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+%Fxy = zeros(Nks^2,1);
+Fxy = ksdensity(Y([1,2],:)', XY);
+
+% XZ
+xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
+yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
+[XI,YI] = meshgrid(xvec',yvec');
+XZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+Fxz = ksdensity(Y([1,3],:)', XZ);  
+%Fxz = zeros(Nks^2,1);
+
+% YZ
+xvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
+yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
+[XI,YI] = meshgrid(xvec',yvec');
+YZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+Fyz = zeros(Nks^2,1);
+Fyz = ksdensity(Y([2,3],:)', YZ);
+
+ 
+
+
+%% GMM - UKF - EKF
+return
+
+tic
+[wf,mf,Pf] = prop_ptbp(t0,tf,w0,m0,P0,dH,Inf,[],mu);
+toc
+disp(['Number of components NEW = ',num2str(length(wf))])
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% PLOTS
+
+% DATA POINTS
+figure(1)
+subplot(2,2,1)
+plot(Y(1,1:displaySamples),Y(2,1:displaySamples),'.','color',[.5 .5 .5]);
+title("XY")
+xlabel('x-Position [LU]')
+ylabel('y-Position [LU]')
+hold on
+
+subplot(2,2,2)
+plot(Y(1,1:displaySamples),Y(3,1:displaySamples),'.','color',[.5 .5 .5]);
+title("XZ")
+xlabel('x-Position [LU]')
+ylabel('z-Position [LU]')
+hold on
+
+subplot(2,2,3)
+plot(Y(2,1:displaySamples),Y(3,1:displaySamples),'.','color',[.5 .5 .5]);
+title("YZ")
+xlabel('y-Position [LU]')
+ylabel('z-Position [LU]')
+hold on
+
+subplot(2,2,4);
+scatter3(Y(1,1:displaySamples), Y(2,1:displaySamples),Y(3,1:displaySamples),'.','color',[.5 .5 .5]);
+
+% % KDE 
+subplot(2,2,1);
+contour(reshape(XY(:,1),Nks,Nks),reshape(XY(:,2),Nks,Nks),reshape(Fxy,Nks,Nks), ...
+    'Color','b','LineWidth',2);
+
+subplot(2,2,2);
+contour(reshape(XZ(:,1),Nks,Nks),reshape(XZ(:,2),Nks,Nks),reshape(Fxz,Nks,Nks), ...
+   'Color','b','LineWidth',2);
+
+subplot(2,2,3);
+contour(reshape(YZ(:,1),Nks,Nks),reshape(YZ(:,2),Nks,Nks),reshape(Fyz,Nks,Nks), ...
+    'Color','b','LineWidth',2);
+
+
+% 
+% % GMM-UKF-EKF
+% figure(1)
+% [pNEW,XNEW,YNEW,~,~] = gmmpdf(wf,mf,Pf,[1;2],800,6);
+% contour(XNEW,YNEW,pNEW,'--', 'Color','r','LineWidth',2);% ,[1.311, 9.358, 20.12, 30.08, 40.18]*1e-5, % contours from kirsten's plots for LEO example
+% xlabel('x-Position [LU]')
+% ylabel('y-Position [LU]')
+% hold off
+% 
+% figure(2)
+% [pNEW,XNEW,YNEW,~,~] = gmmpdf(wf,mf,Pf,[1;3],800,6);
+% contour(XNEW,YNEW,pNEW,'--', 'Color','r','LineWidth',2); % ,[1.311, 9.358, 20.12, 30.08, 40.18]*1e-5,
+% xlabel('x-Position [LU]')
+% ylabel('z-Position [LU]')
+% hold off
+% 
+% figure(3)
+% [pNEW,XNEW,YNEW,~,~] = gmmpdf(wf,mf,Pf,[2;3],800,6);
+% contour(XNEW,YNEW,pNEW,'--','Color','r','LineWidth',2) 
+% xlabel('y-Position [LU]')
+% ylabel('z-Position [LU]')
+% hold off
