@@ -3,7 +3,7 @@ clc
 %%
 close all
 %%
-runKDE = false;
+runKDE = true;
 runGUE = false;
 runEnGMM = true;
 screenshotPlots = false;
@@ -27,7 +27,7 @@ P_initial = 1.0e-08 *[ ...
 
 ICs = mvnrnd(mu_initial, P_initial, nSamples);
 
-measurementInterval = 0.05;
+measurementInterval = 0.005;
 frameInterval = 0.001;
 
 % set up initial time and final time (non dimensional)
@@ -43,35 +43,35 @@ P0     = {P_initial};
 dH = 1.455021851351014; 
 
 [t, Y] = PropagateSamples(ICs, t0, frameInterval, measurementInterval);
-
+Z = angles_only(Y(:,:,end), true, mu);
 %%
 % writematrix(Y', fullfile("Data","PropagatedStates.csv"));
 % writematrix(Y0', fullfile("Data","InitialStates.csv"));
 %%
 %%%%% KDE
-if runKDE
-    Nks = 100;
-    % XY
-    xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
-    yvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
-    [XI,YI] = meshgrid(xvec',yvec');
-    XY = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
-    Fxy = ksdensity(Y([1,2],:)', XY);
-    
-    % XZ
-    xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
-    yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
-    [XI,YI] = meshgrid(xvec',yvec');
-    XZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
-    Fxz = ksdensity(Y([1,3],:)', XZ);  
-    
-    % YZ
-    xvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
-    yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
-    [XI,YI] = meshgrid(xvec',yvec');
-    YZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
-    Fyz = ksdensity(Y([2,3],:)', YZ);
-end
+% if runKDE
+%     Nks = 100;
+%     % XY
+%     xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
+%     yvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
+%     [XI,YI] = meshgrid(xvec',yvec');
+%     XY = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+%     Fxy = ksdensity(Y([1,2],:)', XY);
+% 
+%     % XZ
+%     xvec  = linspace(min(Y(1,:)),max(Y(1,:)),Nks);
+%     yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
+%     [XI,YI] = meshgrid(xvec',yvec');
+%     XZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+%     Fxz = ksdensity(Y([1,3],:)', XZ);  
+% 
+%     % YZ
+%     xvec  = linspace(min(Y(2,:)),max(Y(2,:)),Nks);
+%     yvec  = linspace(min(Y(3,:)),max(Y(3,:)),Nks);
+%     [XI,YI] = meshgrid(xvec',yvec');
+%     YZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+%     Fyz = ksdensity(Y([2,3],:)', YZ);
+% end
 
 
 %% GMM - UKF - EKF
@@ -86,71 +86,105 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% PLOTS
 animationImagesFolder = 'Plots';
-f = figure('Units', 'pixels', 'Position', [100 100 800 600]);
-for tIdx = 1:numel(Y(1,1,:))
+f = figure('Units', 'pixels', 'Position', [100 100 1000 800]);
+% set(f, 'Color', 'k')
+% for i = 1:4
+%     ax = subplot(2, 2, i);
+% 
+%     set(ax, 'Color', 'k');  
+% 
+%     set(ax, 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+% end
+
+for tIdx = numel(t)
     % DATA POINTS
     
     subplot(2,2,1)
+    hold on
     plot(Y(1:displaySamples,1,tIdx),Y(1:displaySamples,2,tIdx),'.','color',[.5 .5 .5]);
     title("XY")
     xlabel('x-Position [LU]')
     ylabel('y-Position [LU]')
     grid on
-    hold off
+    
     
     subplot(2,2,2)
+    hold on
     plot(Y(1:displaySamples,1,tIdx),Y(1:displaySamples,3,tIdx),'.','color',[.5 .5 .5]);
     title("XZ")
     xlabel('x-Position [LU]')
     ylabel('z-Position [LU]')
     grid on
-    hold off
+    
     
     subplot(2,2,3)
+    hold on
     plot(Y(1:displaySamples,2,tIdx),Y(1:displaySamples,3,tIdx),'.','color',[.5 .5 .5]);
     title("YZ")
     xlabel('y-Position [LU]')
     ylabel('z-Position [LU]')
     grid on
-    hold off
+    
     
     subplot(2,2,4);
     hold on
-    xmean = mean(Y(1:idx,1,end));
-    ymean = mean(Y(1:idx,2,end));
-    zmean = mean(Y(1:idx,3,end));
-    xlim([xmean-margin, xmean+margin]);
-    ylim([ymean-margin, ymean+margin]);
-    zlim([zmean-margin, zmean+margin]);
+    
+    margin = 2e-2;
     for idx = 1:nSamples
         plot3(squeeze(Y(idx,1,1:tIdx)), squeeze(Y(idx,2,1:tIdx)), squeeze(Y(idx,3,1:tIdx)),'-','color',[.5 .5 .5]);
-       
     end
-    margin = 2*10^-4;
+    % xmean = mean(Y(:,1,tIdx));
+    % ymean = mean(Y(:,2,tIdx));
+    % zmean = mean(Y(:,3,tIdx));
+    % xlim([xmean-margin, xmean+margin]);
+    % ylim([ymean-margin, ymean+margin]);
+    % zlim([zmean-margin, zmean+margin]);
+    % view(45,30);
+    % hold off
     
-    view(45, 30);
-    
-    hold off
-    
-
-
     % % KDE 
     if runKDE
+        Nks = 100;
+        % XY
+        xvec  = linspace(min(Y(:,1,tIdx)),max(Y(:,1,tIdx)),Nks);
+        yvec  = linspace(min(Y(:,2,tIdx)),max(Y(:,2,tIdx)),Nks);
+        [XI,YI] = meshgrid(xvec',yvec');
+        XY = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+        size(Y(:,[1,2],tIdx))
+        Fxy = ksdensity(Y(:,[1,2],tIdx), XY);
+        
+        % XZ
+        xvec  = linspace(min(Y(:,1,tIdx)),max(Y(:,1,tIdx)),Nks);
+        yvec  = linspace(min(Y(:,3,tIdx)),max(Y(:,3,tIdx)),Nks);
+        [XI,YI] = meshgrid(xvec',yvec');
+        XZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+        Fxz = ksdensity(Y(:,[1,3],tIdx), XZ);  
+        
+        % YZ
+        xvec  = linspace(min(Y(:,2,tIdx)),max(Y(:,2,tIdx)),Nks);
+        yvec  = linspace(min(Y(:,3,tIdx)),max(Y(:,3,tIdx)),Nks);
+        [XI,YI] = meshgrid(xvec',yvec');
+        YZ = [reshape(XI,Nks^2,1),reshape(YI,Nks^2,1)];
+        Fyz = ksdensity(Y(:,[2,3],tIdx), YZ);
+    
         subplot(2,2,1);
         contour(reshape(XY(:,1),Nks,Nks),reshape(XY(:,2),Nks,Nks),reshape(Fxy,Nks,Nks), ...
             'Color','b','LineWidth',2);
+        hold off
         
         subplot(2,2,2);
         contour(reshape(XZ(:,1),Nks,Nks),reshape(XZ(:,2),Nks,Nks),reshape(Fxz,Nks,Nks), ...
            'Color','b','LineWidth',2);
+        hold off
         
         subplot(2,2,3);
         contour(reshape(YZ(:,1),Nks,Nks),reshape(YZ(:,2),Nks,Nks),reshape(Fyz,Nks,Nks), ...
             'Color','b','LineWidth',2);
+        hold off
     end
     
     if screenshotPlots
-        set(gcf, 'Units', 'pixels', 'Position', [100 100 800 600]);
+        set(gcf, 'Units', 'pixels', 'Position', [100 100 1000 800]);
         filename = fullfile(animationImagesFolder, sprintf('frame_%04d.png', tIdx));
         frame = getframe(f);
         imwrite(frame.cdata, filename);

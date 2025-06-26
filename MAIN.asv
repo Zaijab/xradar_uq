@@ -86,8 +86,17 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% PLOTS
 animationImagesFolder = 'Plots';
-f = figure('Units', 'pixels', 'Position', [100 100 800 600]);
-for tIdx = 1:numel(Y(1,1,:))
+f = figure('Units', 'pixels', 'Position', [100 100 1000 800]);
+% set(f, 'Color', 'k')
+% for i = 1:4
+%     ax = subplot(2, 2, i);
+% 
+%     set(ax, 'Color', 'k');  
+% 
+%     set(ax, 'XColor', 'w', 'YColor', 'w', 'GridColor', 'w');
+% end
+
+for tIdx = numel(t)
     % DATA POINTS
     
     subplot(2,2,1)
@@ -116,15 +125,19 @@ for tIdx = 1:numel(Y(1,1,:))
     
     subplot(2,2,4);
     hold on
+    
+    margin = 2e-2;
     for idx = 1:nSamples
         plot3(squeeze(Y(idx,1,1:tIdx)), squeeze(Y(idx,2,1:tIdx)), squeeze(Y(idx,3,1:tIdx)),'-','color',[.5 .5 .5]);
-        xmean = mean(Y(idx,1,1:tIdx));
-        ymean = mean(Y(idx,2,1:tIdx));
-        zmean = mean(Y(idx,3,1:tIdx));
     end
-    view(45, 30);
-    axis equal
-    hold off
+    % xmean = mean(Y(:,1,tIdx));
+    % ymean = mean(Y(:,2,tIdx));
+    % zmean = mean(Y(:,3,tIdx));
+    % xlim([xmean-margin, xmean+margin]);
+    % ylim([ymean-margin, ymean+margin]);
+    % zlim([zmean-margin, zmean+margin]);
+    % view(45,30);
+    % hold off
     
 
 
@@ -144,7 +157,7 @@ for tIdx = 1:numel(Y(1,1,:))
     end
     
     if screenshotPlots
-        set(gcf, 'Units', 'pixels', 'Position', [100 100 800 600]);
+        set(gcf, 'Units', 'pixels', 'Position', [100 100 1000 800]);
         filename = fullfile(animationImagesFolder, sprintf('frame_%04d.png', tIdx));
         frame = getframe(f);
         imwrite(frame.cdata, filename);
