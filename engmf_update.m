@@ -5,7 +5,6 @@ function [m_update, P_update, w_update] = engmf_update(h_func, H_func, z, m_pred
     
     cfig.h = h_func;
     cfig.H = H_func;
-    % model.D = size(m_predict, 1);
     model.R = R;
     model.P_D = 1;
     model.lambda_c = 0;

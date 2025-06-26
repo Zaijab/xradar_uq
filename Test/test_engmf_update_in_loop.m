@@ -27,7 +27,7 @@ P_initial = 1.0e-08 *[ ...
 
 ICs = mvnrnd(mu_initial, P_initial, nSamples);
 
-measurementInterval = 0.005;
+measurementInterval = 0.01;
 frameInterval = 0.001;
 
 % set up initial time and final time (non dimensional)
@@ -39,15 +39,37 @@ nX     = 6;
 w0     = {1};
 m0     = {mu_initial};
 P0     = {P_initial};         
-dH = 1.455021851351014; 
+dH = 1.455021851351014;
+Yt = mu_initial';
+[t, Yt] = PropagateSamples(Yt, t0, frameInterval, measurementInterval);
 [t, Y] = PropagateSamples(ICs, t0, frameInterval, measurementInterval);
 
-% Measurement Covariance - R
 R = diag([(0.5 * pi / 180)^2, (0.5 * pi / 180)^2]);
-% Measurements num_samples 
-Z = angles_only(Y(:,:,end), mu, R, tre);
+z = angles_only(Yt(1, :, size(Yt, 3)), mu, R, true);
+gm = kde_silverman(Y(:, :, size(Y, 3)));
+m_predict = gm.mu;
+P_predict = gm.Sigma;
+w_predict = gm.ComponentProportion;
+J_rsp = 250;
+rng_stream = RandStream('mrg32k3a','Seed', 42);
 
+h_func = @(model, state, noise_flag) angles_only(state, mu);
+H_func = @(model, state) angles_only_jacobian(state, mu);
 
+% Y states
+engmf_update( ...
+    h_func, ...
+    H_func, ...
+    z, ...
+    m_predict, ...
+    P_predict, ...
+    w_predict, ...
+    R, ...
+    J_rsp, ...
+    rng_stream ...
+)
 
-
-
+% % Measurement Covariance - R
+% % Measurements num_samples 
+% Z = angles_only(Y(:,:,end), mu, R, true);
+% 
