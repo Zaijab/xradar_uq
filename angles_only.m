@@ -11,6 +11,6 @@ function measurements = angles_only(positions, mu, R, add_noise)
     measurements = [alpha epsilon];
     
     if add_noise 
-        measurements = mvnrnd(measurements', R)';
+        measurements = mvnrnd(measurements, R);
     end
 end
