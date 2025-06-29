@@ -15,25 +15,25 @@ class AbstractFilter(eqx.Module, strict=True):
     - Update: 
     """
 
-    measurement_system: AbstractMeasurementSystem
-    dynamical_system: AbstractDynamicalSystem
+    # measurement_system: AbstractMeasurementSystem
+    # dynamical_system: AbstractDynamicalSystem
     
-    @abc.abstractmethod
-    def initialize(
-        self,
-        key: Key[Array, "..."],
-    ) -> Float[Array, "batch_size state_dim"]:
-        raise NotImplementedError
+    # @abc.abstractmethod
+    # def initialize(
+    #     self,
+    #     key: Key[Array, "..."],
+    # ) -> Float[Array, "batch_size state_dim"]:
+    #     raise NotImplementedError
     
     
-    @abc.abstractmethod
-    def predict(
-        self,
-        key: Key[Array, "..."],
-        posterior_ensemble: Float[Array, "batch_size state_dim"],
-        measurement: Float[Array, "measurement_dim"],
-    ) -> Float[Array, "batch_size state_dim"]:
-        raise NotImplementedError
+    # @abc.abstractmethod
+    # def predict(
+    #     self,
+    #     key: Key[Array, "..."],
+    #     posterior_ensemble: Float[Array, "batch_size state_dim"],
+    #     measurement: Float[Array, "measurement_dim"],
+    # ) -> Float[Array, "batch_size state_dim"]:
+    #     raise NotImplementedError
     
 
     @abc.abstractmethod
