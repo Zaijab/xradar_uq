@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from data_science_utils.measurement_systems.abc import AbstractMeasurementSystem
+from xradar_uq.measurement_systems.abc import AbstractMeasurementSystem
 from jaxtyping import jaxtyped, Float, Array, Key
 from beartype import beartype as typechecker
 
