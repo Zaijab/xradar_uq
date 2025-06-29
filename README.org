@@ -1,0 +1,26 @@
+This is a project intended to be used for the UQ team at xRADAR.
+
+* Installation
+
+#+BEGIN_SRC
+git clone 
+python3 -m pip -e .
+#+END_SRC
+
+* Execution
+
+
+
+* Code Structure
+
+As it currently stands, there is functional code representing the state space model and some extra files you can ignore.
+
+** State Space Representation
+
+Recall that 
+
+** Other Files
+
+*** Testing Code
+
+Python has a testing suite called =pytest=. 
