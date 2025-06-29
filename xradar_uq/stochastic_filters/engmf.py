@@ -5,7 +5,7 @@ import jax.scipy as jsp
 from beartype import beartype as typechecker
 from jaxtyping import Array, Float, Key, jaxtyped
 
-from xradar_uq.filters import AbstractFilter
+from xradar_uq.stochastic_filters import AbstractFilter
 from xradar_uq.measurement_systems import AbstractMeasurementSystem
 
 

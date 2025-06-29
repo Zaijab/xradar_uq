@@ -3,7 +3,7 @@ import abc
 import equinox as eqx
 from jaxtyping import Array, Float, Key
 from xradar_uq.measurement_systems import AbstractMeasurementSystem
-
+from xradar_uq.dynamical_systems import AbstractDynamicalSystem
 
 class AbstractFilter(eqx.Module, strict=True):
     """
