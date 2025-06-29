@@ -3,9 +3,7 @@ import jax
 import jax.numpy as jnp
 from beartype import beartype as typechecker
 from jaxtyping import Array, Bool, Float, Key, jaxtyped
-
 from xradar_uq.measurement_systems import AbstractMeasurementSystem
-from xradar_uq.statistics.random_finite_sets import RFS
 
 
 class AnglesOnly(AbstractMeasurementSystem, strict=True):

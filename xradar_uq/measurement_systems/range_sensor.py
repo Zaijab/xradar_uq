@@ -1,9 +1,9 @@
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-import equinox as eqx
-from xradar_uq.measurement_systems.abc import AbstractMeasurementSystem
-from jaxtyping import jaxtyped, Float, Array, Key
 from beartype import beartype as typechecker
+from jaxtyping import Array, Float, Key, jaxtyped
+from xradar_uq.measurement_systems import AbstractMeasurementSystem
 
 
 @jaxtyped(typechecker=typechecker)
