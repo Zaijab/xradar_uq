@@ -13,8 +13,9 @@ dependencies = [
     "jaxtyping",
     "beartype",
     "equinox",
-    "numpy",
     "diffrax",
+    "distrax",
+    "matplotlib",
 ]
 
 [project.optional-dependencies]

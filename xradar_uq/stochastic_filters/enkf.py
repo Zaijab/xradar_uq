@@ -14,6 +14,9 @@ class EnKF(AbstractFilter, strict=True):
     inflation_factor: float = 1.05
     debug: bool = False
 
+    def initialize(self, key, ):
+        return 0
+
     @jaxtyped(typechecker=typechecker)
     @eqx.filter_jit
     def update_point(
