@@ -4,6 +4,8 @@ import equinox as eqx
 from jaxtyping import Array, Float, Key
 from xradar_uq.measurement_systems import AbstractMeasurementSystem
 from xradar_uq.dynamical_systems import AbstractDynamicalSystem
+import distrax
+
 
 class AbstractFilter(eqx.Module, strict=True):
     """
@@ -22,7 +24,8 @@ class AbstractFilter(eqx.Module, strict=True):
     # def initialize(
     #     self,
     #     key: Key[Array, "..."],
-    # ) -> Float[Array, "batch_size state_dim"]:
+    #     initial_belief: distrax.Distribution
+    # ) -> distrax.Distribution:
     #     raise NotImplementedError
     
     
@@ -30,9 +33,9 @@ class AbstractFilter(eqx.Module, strict=True):
     # def predict(
     #     self,
     #     key: Key[Array, "..."],
-    #     posterior_ensemble: Float[Array, "batch_size state_dim"],
-    #     measurement: Float[Array, "measurement_dim"],
-    # ) -> Float[Array, "batch_size state_dim"]:
+    #     posterior_distribution: distrax.Distribution,
+    #     measurement: Float[Array, "*num_measurements measurement_dim"],
+    # ) -> distrax.Distribution:
     #     raise NotImplementedError
     
 
@@ -40,10 +43,9 @@ class AbstractFilter(eqx.Module, strict=True):
     def update(
         self,
         key: Key[Array, "..."],
-        prior_ensemble: Float[Array, "batch_size state_dim"],
+        prior_ensemble: distrax.Distribution,
         measurement: Float[Array, "measurement_dim"],
-        measurement_system: AbstractMeasurementSystem,
-    ) -> Float[Array, "batch_size state_dim"]:
+    ) -> distrax.Distribution:
         """
         Given some noisy measurement and my current understanding of the state, how should I update my degrees of beliefs?
         """

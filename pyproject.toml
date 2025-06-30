@@ -16,6 +16,7 @@ dependencies = [
     "diffrax",
     "distrax",
     "matplotlib",
+    "tensorflow_probability",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +24,9 @@ dev = ["pytest", "black", "isort"]
 
 [tool.mypy]
 python_executable = ".direnv/python-3.11.11/bin/python"
+
+[tool.flake8]
+extend-ignore = ["F722"]
+
+[tool.pylsp]
+plugins.pyflakes.ignore = ["F722"]
