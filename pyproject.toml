@@ -17,6 +17,7 @@ dependencies = [
     "distrax",
     "matplotlib",
     "tensorflow_probability",
+    "distreqx",
 ]
 
 [project.optional-dependencies]

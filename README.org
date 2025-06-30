@@ -7,6 +7,10 @@ git clone
 python3 -m pip -e .
 #+END_SRC
 
+You may also run the code on the cloud:
+
+https://colab.research.google.com/drive/1sVesgwAQLXrizd_6onU2RDahOrEcPF25?usp=sharing
+
 * Execution
 
 
