@@ -93,8 +93,8 @@ class AbstractDynamicalSystem(eqx.Module, strict=True):
     def generate(
         self,
         key: Key[Array, "..."],
-        batch_size: int = 1000,
-        final_time: float | int = 100.0,
+        batch_size: int = 50,
+        final_time: float | int = 0.0,
     ) -> Float[Array, "{batch_size} state_dim"]:
         keys = jax.random.split(key, batch_size)
         initial_states = eqx.filter_vmap(self.initial_state)(keys)

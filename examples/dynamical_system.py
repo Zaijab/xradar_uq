@@ -1,18 +1,17 @@
 """
 This file shows how to use the dynamical system objects.
 """
-
+# First, import the object
 import equinox as eqx
 import jax.numpy as jnp
-from diffrax import (AbstractSolver, AbstractStepSizeController,
-                     ConstantStepSize, Dopri8, PIDController, SaveAt)
-
-# First, import the object
+from diffrax import Dopri8, PIDController, SaveAt
 from xradar_uq.dynamical_systems import CR3BP
 
 # Next, we can instantiate it with a number of options
+# These set up parameters for the dynamical system `mu`
+# The rest are parameters for the solver
 dynamical_system = CR3BP(
-    # The non dimensionalized mass ratio
+    # The non dimensionless mass ratio
     mu=0.012150584269940,
     # dt for the solver
     dt=0.01,
@@ -74,4 +73,5 @@ batch = jnp.ones((10, 6))
 # Instead, we need to vectorize the operation over the dimension
 # Equinox has a nice vmap operation
 # https://docs.kidger.site/equinox/api/transformations/#vectorisation-and-parallelisation
+# In theory, I could have this 
 new_state = eqx.filter_vmap(dynamical_system.flow)(initial_time, final_time, batch)
