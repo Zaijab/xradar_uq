@@ -41,9 +41,15 @@ In order to avoid overwriting the name `filter`, we call it `stochastic_filter.
 """
 stochastic_filter = EnGMF()
 true_state = dynamical_system.initial_state()
-posterior_ensemble = dynamical_system.generate(subkey)
+posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0)
+errors = []
 
 for _ in range(10):
     key, subkey = jax.random.split(key)
+    true_state = dynamical_system.flow(0.0, 1.0, true_state)
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
     posterior_ensemble = stochastic_filter.update(subkey, prior_ensemble, measurement_system(true_state), measurement_system)
+    errors.append(true_state - jnp.mean(posterior_ensemble, axis=0))
+
+rmse = jnp.sqrt(jnp.mean(jnp.asarray(errors) ** 2))
+rmse
