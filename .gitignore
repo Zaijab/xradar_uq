@@ -1,4 +1,5 @@
 venv/
+figures/
 .direnv/
 __pycache__/
 *.pyc
