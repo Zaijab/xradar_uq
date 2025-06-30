@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from xradar_uq.dynamical_systems import CR3BP
+from xradar_uq.measurement_systems import Radar
 from xradar_uq.stochastic_filters import EnGMF
 
 
@@ -76,20 +77,33 @@ def plot_tracking_fov(predicted_state, true_state, step, elevation_fov=0.1, azim
 # Example usage with custody loss
 dynamical_system = CR3BP()
 stochastic_filter = EnGMF()
+measurement_system = Radar()
+
 key = jax.random.key(42)
 key, subkey = jax.random.split(key)
 
 true_state = dynamical_system.initial_state()
-true_state = true_state.at[3:].add(jnp.array([0.25, 0.0, 0.0]))  # Add velocity perturbation
-posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0)
+posterior_ensemble = dynamical_system.generate(subkey)
 
 
-predicted_state = dynamical_system.initial_state()  # Nominal prediction
-
+# We were tracking an object
 for i in range(10):
-    plot_tracking_fov(predicted_state, true_state, i)
-    key, subkey = jax.random.split(key)
+    key, update_key, measurement_key = jax.random.split(key, 3)
     true_state = dynamical_system.flow(0.0, 1.0, true_state)
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
-    posterior_ensemble = stochastic_filter.update(subkey, prior_ensemble, measurement_system(true_state), measurement_system)
+    posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+    predicted_state = jnp.mean(posterior_ensemble, axis=0)
+    plot_tracking_fov(predicted_state, true_state, i)
 
+
+# # Suddenly it maneuvers
+# true_state = true_state.at[3:].add(jnp.array([0.25, 0.0, 0.0]))
+
+# # Now we lost it
+# for i in range(10):
+#     key, update_key, measurement_key = jax.random.split(key, 3)
+#     true_state = dynamical_system.flow(0.0, 1.0, true_state)
+#     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
+#     posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+#     predicted_state = jnp.mean(posterior_ensemble, axis=0)
+#     plot_tracking_fov(predicted_state, true_state, i)
