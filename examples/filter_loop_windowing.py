@@ -1,8 +1,14 @@
+import os
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-import jax.numpy as jnp
-import os
+
 from xradar_uq.dynamical_systems import CR3BP
+from xradar_uq.stochastic_filters import EnGMF
+
 
 def tracking_measurability(state, predicted_state, elevation_fov=0.1, azimuth_fov=0.1, range_fov=0.05):
     rho = np.linalg.norm(state[:3])
@@ -69,10 +75,21 @@ def plot_tracking_fov(predicted_state, true_state, step, elevation_fov=0.1, azim
 
 # Example usage with custody loss
 dynamical_system = CR3BP()
+stochastic_filter = EnGMF()
+key = jax.random.key(42)
+key, subkey = jax.random.split(key)
+
 true_state = dynamical_system.initial_state()
 true_state = true_state.at[3:].add(jnp.array([0.25, 0.0, 0.0]))  # Add velocity perturbation
+posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0)
+
+
 predicted_state = dynamical_system.initial_state()  # Nominal prediction
+
 for i in range(10):
     plot_tracking_fov(predicted_state, true_state, i)
+    key, subkey = jax.random.split(key)
     true_state = dynamical_system.flow(0.0, 1.0, true_state)
-    predicted_state = dynamical_system.flow(0.0, 1.0, predicted_state)
+    prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
+    posterior_ensemble = stochastic_filter.update(subkey, prior_ensemble, measurement_system(true_state), measurement_system)
+
