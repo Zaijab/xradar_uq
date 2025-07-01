@@ -25,7 +25,7 @@ class AnglesOnly(AbstractMeasurementSystem, strict=True):
         self,
         state: Float[Array, "state_dim"],
         key: Key[Array, ""] | None = None,
-    ) -> Float[Array, "3"]:
+    ) -> Float[Array, "2"]:
         
         # Satellite position in barycentric coordinates
         satellite_pos = state[:3]
@@ -41,7 +41,7 @@ class AnglesOnly(AbstractMeasurementSystem, strict=True):
         alpha = jnp.arctan2(y, x)          # Azimuth
         epsilon = jnp.arcsin(z / jnp.sqrt(x**2 + y**2 + z**2))      # Elevation
 
-
+        measurements = jnp.array([alpha, epsilon])
         if key is not None:
             measurements = jax.random.multivariate_normal(
                 key, mean=measurements, cov=self.covariance
