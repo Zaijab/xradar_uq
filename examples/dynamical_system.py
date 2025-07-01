@@ -5,6 +5,8 @@ This file shows how to use the dynamical system objects.
 import equinox as eqx
 import jax.numpy as jnp
 from diffrax import Dopri8, PIDController, SaveAt
+from jaxtyping import Array, Float
+
 from xradar_uq.dynamical_systems import CR3BP
 
 # Next, we can instantiate it with a number of options
@@ -32,14 +34,14 @@ dynamical_system = CR3BP(
 
 # The API of a dynamical system comes from the nomenclature:
 # https://en.wikipedia.org/wiki/Dynamical_system#Formal_definition
+# So we want a trajectory, flow, and orbit of our dynamical system
+# This API also works for discrete systems too, but we won't deal with them here.
 
-# initial_time
-# final_time
-# state: (6,)
+# To integrate a system, we at least need the following:
 
-initial_time = 0.0
-final_time = 10.0
-state = jnp.ones(6)
+initial_time: float = 0.0
+final_time: float = 10.0
+state: Float[Array, "6"] = jnp.ones(6)
 
 # Which means we have the flow through x
 # This is the result of numerical integration after final_time
