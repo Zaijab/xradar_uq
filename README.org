@@ -15,9 +15,7 @@ python3 -m pip -e .
 
 When using it on Windows, make sure you have the C++ Redistributable: https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170
 
-* Execution
-
-
+These are required for JAX to work properly.
 
 * Code Structure
 
@@ -25,7 +23,7 @@ As it currently stands, there is functional code representing the state space mo
 
 ** State Space Representation
 
-Recall that 
+
 
 ** Other Files
 
