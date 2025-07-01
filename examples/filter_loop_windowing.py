@@ -13,7 +13,9 @@ from xradar_uq.dynamical_systems import CR3BP
 from xradar_uq.measurement_systems import AbstractMeasurementSystem, Radar
 from xradar_uq.stochastic_filters import EnGMF
 
-
+# RangeSensor r < rthresh
+# AnglesOnly uses r_0 < r < r_1
+# Radar uses r_0 < r < r_1
 def tracking_measurability(state, predicted_state, elevation_fov=(5 * jnp.pi / 180), azimuth_fov=(5 * jnp.pi / 180), range_fov=1):
 
     rho = np.linalg.norm(state[:3])
@@ -321,12 +323,13 @@ for i in range(measurement_time):
     true_state = dynamical_system.flow(0.0, 1.0, true_state)
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
     
-    # predicted_state = jnp.mean(prior_ensemble, axis=0) # 0.955
+    predicted_state = jnp.mean(prior_ensemble, axis=0) # 0.955
+
     # predicted_state = get_kde_mode_center(window_center_key, prior_ensemble) # 0.946
     # predicted_state = get_information_optimal_center(window_center_key, prior_ensemble, measurement_system) # 0.943
-    predicted_state = get_entropy_reduction_center(window_center_key, prior_ensemble, measurement_system) # 0.882
-    # predicted_state = get_quantile_based_center(window_center_key, prior_ensemble) # 0.49
-    # predicted_state = get_uncertainty_weighted_kde_center(window_center_key, prior_ensemble) # 0.24
+    # predicted_state = get_entropy_reduction_center(window_center_key, prior_ensemble, measurement_system) # 0.882
+    # predicted_state = get_quantile_based_center(window_center_key, prior_ensemble) # 0.956
+    # predicted_state = get_uncertainty_weighted_kde_center(window_center_key, prior_ensemble) # 0.919
     
     times_found += 1 if tracking_measurability(true_state, predicted_state) else 0
     # plot_tracking_fov(predicted_state, true_state, i)
@@ -337,10 +340,40 @@ print(times_found / measurement_time)
 
 
 # # Suddenly it maneuvers
-# true_state = true_state.at[3:].add(jnp.array([0.25, 0.0, 0.0]))
+# Plot total delta V vs frequency of detection
+
+times_found = 0
+measurement_time = 1000
+for i in range(measurement_time):
+    print(i)
+    key, subkey = jax.random.split(key)
+    if jax.random.bernoulli(subkey, p=0.1):
+        # (total fuel here)
+        key, subkey = jax.random.split(key)
+        # 1e-5 roughly velocity constant thrust, MC iteration uniform dist over (3,) see overleaf
+        true_state = true_state.at[3:].add(jnp.array([0.05, 0.0, 0.0]))
+    key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
+    true_state = dynamical_system.flow(0.0, 1.0, true_state)
+    prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
+    
+    predicted_state = jnp.mean(prior_ensemble, axis=0) # 0.955 num_times I saw sate / total_time 
+
+    # predicted_state = get_kde_mode_center(window_center_key, prior_ensemble) # 0.946
+    # predicted_state = get_information_optimal_center(window_center_key, prior_ensemble, measurement_system) # 0.943
+    # predicted_state = get_entropy_reduction_center(window_center_key, prior_ensemble, measurement_system) # 0.882
+    # predicted_state = get_quantile_based_center(window_center_key, prior_ensemble) # 0.956
+    # predicted_state = get_uncertainty_weighted_kde_center(window_center_key, prior_ensemble) # 0.919
+    
+    times_found += 1 if tracking_measurability(true_state, predicted_state) else 0
+    # plot_tracking_fov(predicted_state, true_state, i)
+    
+    posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+
+print(times_found / measurement_time)
+
 
 # # Now we lost it
-# for i in range(10):
+# for i in range(1000):
 #     key, update_key, measurement_key = jax.random.split(key, 3)
 #     true_state = dynamical_system.flow(0.0, 1.0, true_state)
 #     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)

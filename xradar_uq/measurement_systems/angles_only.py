@@ -40,8 +40,7 @@ class AnglesOnly(AbstractMeasurementSystem, strict=True):
         # Range, azimuth, elevation from Earth
         alpha = jnp.arctan2(y, x)          # Azimuth
         epsilon = jnp.arcsin(z / rho)      # Elevation
-        
-        measurements = jnp.array([rho, alpha, epsilon])
+
 
         if key is not None:
             measurements = jax.random.multivariate_normal(
