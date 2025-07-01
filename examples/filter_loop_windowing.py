@@ -23,9 +23,9 @@ def tracking_measurability(state, predicted_state, elevation_fov=(5 * jnp.pi / 1
     azimuth = np.arctan2(state[1], state[0])
     azimuth_pred = np.arctan2(predicted_state[1], predicted_state[0])
 
-    # print(np.abs(elevation - elevation_pred), elevation_fov / 2, np.abs(elevation - elevation_pred) <= elevation_fov / 2)
-    # print(np.abs(azimuth - azimuth_pred), azimuth_fov / 2, np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
-    # print(np.abs(rho - rho_pred), range_fov / 2, np.abs(rho - rho_pred) <= range_fov / 2)
+    print(np.abs(elevation - elevation_pred), elevation_fov / 2, np.abs(elevation - elevation_pred) <= elevation_fov / 2)
+    print(np.abs(azimuth - azimuth_pred), azimuth_fov / 2, np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
+    print(np.abs(rho - rho_pred), range_fov / 2, np.abs(rho - rho_pred) <= range_fov / 2)
     
     return (np.abs(elevation - elevation_pred) <= elevation_fov / 2 and
             np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
@@ -96,6 +96,7 @@ def silverman_kde_estimate(means):
 # Example usage with custody loss
 dynamical_system = CR3BP()
 stochastic_filter = EnGMF()
+
 measurement_system = Radar()
 
 key = jax.random.key(42)
@@ -313,17 +314,17 @@ def get_quantile_based_center(
 
 # We were tracking an object
 times_found = 0
-measurement_time = 100
+measurement_time = 1000
 for i in range(measurement_time):
     print(i)
     key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
     true_state = dynamical_system.flow(0.0, 1.0, true_state)
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
     
-    predicted_state = jnp.mean(prior_ensemble, axis=0) # 0.51
-    # predicted_state = get_kde_mode_center(window_center_key, prior_ensemble) # 0.4
-    # predicted_state = get_information_optimal_center(window_center_key, prior_ensemble, measurement_system) # 0.22
-    # predicted_state = get_entropy_reduction_center(window_center_key, prior_ensemble, measurement_system) # 0.2
+    # predicted_state = jnp.mean(prior_ensemble, axis=0) # 0.955
+    # predicted_state = get_kde_mode_center(window_center_key, prior_ensemble) # 0.946
+    # predicted_state = get_information_optimal_center(window_center_key, prior_ensemble, measurement_system) # 0.943
+    predicted_state = get_entropy_reduction_center(window_center_key, prior_ensemble, measurement_system) # 0.882
     # predicted_state = get_quantile_based_center(window_center_key, prior_ensemble) # 0.49
     # predicted_state = get_uncertainty_weighted_kde_center(window_center_key, prior_ensemble) # 0.24
     
