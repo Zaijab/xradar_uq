@@ -29,7 +29,7 @@ dynamical_system = CR3BP(
     solver=Dopri8(),
     # The tolerance is calculated as `atol + rtol * y` for the evolving solution `y`.
     # https://en.wikipedia.org/wiki/Proportional%E2%80%93integral%E2%80%93derivative_controller
-    stepsize_contoller=PIDController(rtol=1e-12, atol=1e-12),
+    stepsize_controller=PIDController(rtol=1e-12, atol=1e-12),
 )
 
 # The API of a dynamical system comes from the nomenclature:

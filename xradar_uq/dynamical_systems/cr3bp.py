@@ -12,10 +12,10 @@ from xradar_uq.dynamical_systems import AbstractContinuousDynamicalSystem
 @jaxtyped(typechecker=typechecker)
 class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
     mu: float = 0.012150584269940
-    # mu: float = 0.012150585609624 
+    # mu: float = 0.012150585609624
     dt: float = 0.01
     solver: AbstractSolver = Dopri8()
-    stepsize_contoller: AbstractStepSizeController = PIDController(rtol=1e-12, atol=1e-12)
+    stepsize_controller: AbstractStepSizeController = PIDController(rtol=1e-12, atol=1e-12)
 
     @property
     def dimension(self):

@@ -1,13 +1,16 @@
 import os
 
+import distrax
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
+from beartype import beartype as typechecker
+from jaxtyping import Array, Float, Key, jaxtyped
 
 from xradar_uq.dynamical_systems import CR3BP
-from xradar_uq.measurement_systems import Radar
+from xradar_uq.measurement_systems import AbstractMeasurementSystem, Radar
 from xradar_uq.stochastic_filters import EnGMF
 
 
@@ -20,13 +23,12 @@ def tracking_measurability(state, predicted_state, elevation_fov=(5 * jnp.pi / 1
     azimuth = np.arctan2(state[1], state[0])
     azimuth_pred = np.arctan2(predicted_state[1], predicted_state[0])
 
-    print(np.abs(elevation - elevation_pred), elevation_fov / 2, np.abs(elevation - elevation_pred) <= elevation_fov / 2)
-    print(np.abs(azimuth - azimuth_pred), azimuth_fov / 2, np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
-    print(np.abs(rho - rho_pred), range_fov / 2, np.abs(rho - rho_pred) <= range_fov / 2)
+    # print(np.abs(elevation - elevation_pred), elevation_fov / 2, np.abs(elevation - elevation_pred) <= elevation_fov / 2)
+    # print(np.abs(azimuth - azimuth_pred), azimuth_fov / 2, np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
+    # print(np.abs(rho - rho_pred), range_fov / 2, np.abs(rho - rho_pred) <= range_fov / 2)
     
     return (np.abs(elevation - elevation_pred) <= elevation_fov / 2 and
-            np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2 and
-            np.abs(rho - rho_pred) <= range_fov / 2)
+            np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
 
 def plot_tracking_fov(predicted_state, true_state, step, elevation_fov=(5 * jnp.pi / 180), azimuth_fov=(5 * jnp.pi / 180), range_fov=1.0):
     fig = plt.figure(figsize=(10, 8))
@@ -79,6 +81,18 @@ def plot_tracking_fov(predicted_state, true_state, step, elevation_fov=(5 * jnp.
     plt.savefig(f'figures/fov_step_{step:02d}.png', dpi=150, bbox_inches='tight')
     plt.close()
 
+def silverman_kde_estimate(means):
+    n, d = means.shape[0], means.shape[1]
+    weights = jnp.ones(n) / n
+    silverman_beta = (((4) / (d + 2)) ** ((2) / (d + 4))) #* (n ** ((-2) / (d + 4)))
+    covs = jnp.tile(silverman_beta * jnp.cov(means.T), reps=(n, 1, 1))
+    components = distrax.MultivariateNormalFullCovariance(loc=means, covariance_matrix=covs)
+    return distrax.MixtureSameFamily(
+        mixture_distribution=distrax.Categorical(probs=weights),
+        components_distribution=components
+    )
+
+    
 # Example usage with custody loss
 dynamical_system = CR3BP()
 stochastic_filter = EnGMF()
@@ -139,48 +153,186 @@ def generate_measurement_schedule_cr3bp():
     return jnp.array(schedule)
 
 # This gives you measurement times in proper CR3BP units
-measurement_times_tu = generate_measurement_schedule_cr3bp()
 
-def get_optimal_pointing_direction(posterior_ensemble, measurement_system):
-    """
-    Determine optimal sensor pointing direction to maximize information gain
-    """
-    
-    # Method 1: Simple ensemble mean (your current approach)
-    mean_prediction = jnp.mean(posterior_ensemble, axis=0)
-    
-    # Method 2: Fisher Information Gain weighted (from papers)
-    # Point toward direction that maximizes expected information
-    
-    # Compute measurement Jacobian for each ensemble member
-    jacobians = jax.vmap(jax.jacfwd(measurement_system))(posterior_ensemble)
-    ensemble_cov = jnp.cov(posterior_ensemble.T)
-    
-    # Fisher Information Matrix for each pointing direction
-    fisher_info = jax.vmap(lambda H: H.T @ jnp.linalg.inv(measurement_system.covariance) @ H)(jacobians)
-    
-    # Weight ensemble members by their Fisher information
-    weights = jnp.array([jnp.trace(fi @ ensemble_cov) for fi in fisher_info])
-    weights = weights / jnp.sum(weights)
-    
-    # Optimal pointing is Fisher-weighted mean
-    optimal_pointing = jnp.sum(weights[:, None] * posterior_ensemble, axis=0)
-    
-    return optimal_pointing
 
-# Usage in your loop:
+@jaxtyped(typechecker=typechecker)
+def get_kde_mode_center(
+    key: Key[Array, ""],
+    ensemble: Float[Array, "n_components state_dim"],
+    n_candidates: int = 1000,
+) -> Float[Array, "state_dim"]:
+    """Find the mode (highest density point) of the KDE"""
+    
+    kde = silverman_kde_estimate(ensemble)
+    
+    # Sample candidates from the KDE itself
+    candidates = kde.sample(seed=key, sample_shape=(n_candidates,))
+    
+    # Evaluate probability density at each candidate
+    log_probs = kde.log_prob(candidates)
+    
+    # Return the candidate with highest density
+    max_idx = jnp.argmax(log_probs)
+    return candidates[max_idx]
 
+@jaxtyped(typechecker=typechecker)
+def get_uncertainty_weighted_kde_center(
+    key: Key[Array, ""],
+    ensemble: Float[Array, "n_components state_dim"],
+    n_samples: int = 1000,
+) -> Float[Array, "state_dim"]:
+    """Weight pointing toward regions of high local uncertainty"""
+    
+    kde = silverman_kde_estimate(ensemble)
+    
+    # Sample from the KDE
+    samples = kde.sample(seed=key, sample_shape=(n_samples,))
+    
+    # Compute local uncertainty (inverse of density)
+    densities = kde.prob(samples)
+    uncertainty_weights = 1.0 / (densities + 1e-8)  # Add small epsilon for numerical stability
+    
+    # Normalize weights
+    weights = uncertainty_weights / jnp.sum(uncertainty_weights)
+    
+    # Return uncertainty-weighted centroid
+    return jnp.sum(weights[:, None] * samples, axis=0)
+
+@jaxtyped(typechecker=typechecker)
+def get_kde_mode_optimized(
+    key: Key[Array, ""],
+    ensemble: Float[Array, "n_components state_dim"],
+    n_starts: int = 10,
+    learning_rate: float = 0.01,
+    n_steps: int = 100
+) -> Float[Array, "state_dim"]:
+    """Find KDE mode using gradient ascent"""
+    
+    kde = silverman_kde_estimate(ensemble)
+    
+    # Multiple random starts to avoid local maxima
+    keys = jax.random.split(key, n_starts)
+    initial_points = jax.vmap(lambda k: kde.sample(seed=k))(keys)
+    
+    def gradient_ascent_step(point):
+        grad_fn = jax.grad(kde.log_prob)
+        return point + learning_rate * grad_fn(point)
+    
+    def find_mode_from_start(start_point):
+        def step_fn(point, _):
+            new_point = gradient_ascent_step(point)
+            return new_point, new_point
+        
+        final_point, _ = jax.lax.scan(step_fn, start_point, None, length=n_steps)
+        return final_point, kde.log_prob(final_point)
+    
+    # Find mode from each starting point
+    final_points, final_probs = jax.vmap(find_mode_from_start)(initial_points)
+    
+    # Return the best one
+    best_idx = jnp.argmax(final_probs)
+    return final_points[best_idx]
+
+@jaxtyped(typechecker=typechecker)
+def get_information_optimal_center(
+    key: Key[Array, ""],
+    ensemble: Float[Array, "n_components state_dim"],
+    measurement_system: AbstractMeasurementSystem,
+    n_candidates: int = 500,
+) -> Float[Array, "state_dim"]:
+    """Point to maximize expected Fisher Information Gain"""
+    
+    kde = silverman_kde_estimate(ensemble)
+    
+    # Sample candidate pointing directions
+    candidates = kde.sample(seed=key, sample_shape=(n_candidates,))
+    
+    def expected_information_gain(pointing_state):
+        # Fisher Information at this pointing direction
+        H = jax.jacfwd(measurement_system)(pointing_state)
+        fisher_info = jnp.trace(H.T @ jnp.linalg.solve(measurement_system.covariance, H))
+        
+        # Weight by probability density
+        prob_density = kde.prob(pointing_state)
+        
+        return fisher_info * prob_density
+    
+    # Compute expected information for each candidate
+    expected_info = jax.vmap(expected_information_gain)(candidates)
+    
+    # Return candidate with maximum expected information
+    best_idx = jnp.argmax(expected_info)
+    return candidates[best_idx]
+
+@jaxtyped(typechecker=typechecker)
+def get_entropy_reduction_center(
+    key: Key[Array, ""],
+    ensemble: Float[Array, "n_components state_dim"],
+    measurement_system: AbstractMeasurementSystem,
+    n_candidates: int = 500,
+) -> Float[Array, "state_dim"]:
+    """Point to maximize entropy reduction"""
+    
+    kde = silverman_kde_estimate(ensemble)
+    
+    # Current entropy of the distribution
+    sample_points = kde.sample(seed=key, sample_shape=(1000,))
+    current_entropy = -jnp.mean(kde.log_prob(sample_points))
+    
+    # Sample candidate pointing directions
+    candidates = kde.sample(seed=key, sample_shape=(n_candidates,))
+    
+    def entropy_reduction_score(pointing_state):
+        # Simulate making a measurement at this pointing direction
+        H = jax.jacfwd(measurement_system)(pointing_state)
+        measurement_cov = H @ jnp.cov(ensemble.T) @ H.T + measurement_system.covariance
+        
+        # Approximate entropy reduction (inverse of measurement uncertainty)
+        return -jnp.log(jnp.linalg.det(measurement_cov))
+    
+    scores = jax.vmap(entropy_reduction_score)(candidates)
+    best_idx = jnp.argmax(scores)
+    return candidates[best_idx]
+
+@jaxtyped(typechecker=typechecker)
+def get_quantile_based_center(
+    key: Key[Array, ""],
+    ensemble: Float[Array, "n_components state_dim"],
+    quantile: float = 0.5,  # 0.5 = median
+    n_samples: int = 1000,
+) -> Float[Array, "state_dim"]:
+    """Use quantiles of the KDE distribution"""
+    
+    kde = silverman_kde_estimate(ensemble)
+    
+    # Sample from KDE
+    samples = kde.sample(seed=key, sample_shape=(n_samples,))
+    
+    # Compute quantiles along each dimension
+    return jnp.quantile(samples, quantile, axis=0)
 
 # We were tracking an object
-for i in range(10):
+times_found = 0
+measurement_time = 100
+for i in range(measurement_time):
     print(i)
-    key, update_key, measurement_key = jax.random.split(key, 3)
+    key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
     true_state = dynamical_system.flow(0.0, 1.0, true_state)
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, 1.0, posterior_ensemble)
+    
+    predicted_state = jnp.mean(prior_ensemble, axis=0) # 0.51
+    # predicted_state = get_kde_mode_center(window_center_key, prior_ensemble) # 0.4
+    # predicted_state = get_information_optimal_center(window_center_key, prior_ensemble, measurement_system) # 0.22
+    # predicted_state = get_entropy_reduction_center(window_center_key, prior_ensemble, measurement_system) # 0.2
+    # predicted_state = get_quantile_based_center(window_center_key, prior_ensemble) # 0.49
+    # predicted_state = get_uncertainty_weighted_kde_center(window_center_key, prior_ensemble) # 0.24
+    
+    times_found += 1 if tracking_measurability(true_state, predicted_state) else 0
+    # plot_tracking_fov(predicted_state, true_state, i)
+    
     posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
-    # predicted_state = jnp.mean(posterior_ensemble, axis=0)
-    predicted_state = get_optimal_pointing_direction(prior_ensemble, measurement_system)
-    plot_tracking_fov(predicted_state, true_state, i)
+
+print(times_found / measurement_time)
 
 
 # # Suddenly it maneuvers

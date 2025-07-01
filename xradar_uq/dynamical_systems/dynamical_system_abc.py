@@ -127,7 +127,7 @@ class AbstractContinuousDynamicalSystem(AbstractDynamicalSystem, strict=True):
             t1=final_time,
             dt0=self.dt,
             y0=state,
-            stepsize_controller=self.stepsize_contoller,
+            stepsize_controller=self.stepsize_controller,
             saveat=saveat,
             max_steps=10_000_000,
         )
