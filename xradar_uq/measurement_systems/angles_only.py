@@ -39,7 +39,7 @@ class AnglesOnly(AbstractMeasurementSystem, strict=True):
         
         # Range, azimuth, elevation from Earth
         alpha = jnp.arctan2(y, x)          # Azimuth
-        epsilon = jnp.arcsin(z / rho)      # Elevation
+        epsilon = jnp.arcsin(z / jnp.sqrt(x**2 + y**2 + z**2))      # Elevation
 
 
         if key is not None:
