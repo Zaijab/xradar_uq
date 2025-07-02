@@ -10,17 +10,19 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from beartype import beartype as typechecker
+from diffrax import PIDController
+
 from xradar_uq.dynamical_systems import CR3BP
-from xradar_uq.measurement_systems import Radar, AnglesOnly
+from xradar_uq.measurement_systems import AnglesOnly, Radar
 from xradar_uq.stochastic_filters import EnGMF, EnKF
 
 key = jax.random.key(42)
 
-dynamical_system = CR3BP()
+dynamical_system = CR3BP(stepsize_controller=PIDController(rtol=1e-4, atol=1e-4))
 measurement_system = Radar()
 stochastic_filter = EnGMF()
 
-total_time = 200.0
+total_time = 2.5
 
 mc_iterations = 3
 

@@ -129,6 +129,6 @@ class AbstractContinuousDynamicalSystem(AbstractDynamicalSystem, strict=True):
             y0=state,
             stepsize_controller=self.stepsize_controller,
             saveat=saveat,
-            max_steps=10_000_000,
+            max_steps=100_000_000,
         )
         return sol.ts, sol.ys

@@ -15,7 +15,7 @@ class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
     # mu: float = 0.012150585609624
     dt: float = 0.0001
     solver: AbstractSolver = Dopri8()
-    stepsize_controller: AbstractStepSizeController = PIDController(rtol=1e-12, atol=1e-12)
+    stepsize_controller: AbstractStepSizeController = PIDController(rtol=1e-12, atol=1e-14)
 
     @property
     def dimension(self):

@@ -176,11 +176,11 @@ times_found = 0
 # TU: 0.242 is approx 1 Day
 time_range = 0.242
 
-# How many measurements * time_range
+# # How many measurements * time_range
 measurement_time = 1000
 
-# We're tracking an object initially
-# I guess this is kinda like burn-in lol
+# # We're tracking an object initially
+# # I guess this is kinda like burn-in lol
 # for i in range(measurement_time):
 #     print(times_found, i)
 #     key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
@@ -289,60 +289,67 @@ def plot_3d_state_projections(true_state, posterior_ensemble, prior_ensemble=Non
 
 import pandas as pd
 
-mc_iterations = 10
+mc_iterations = 3
 key, subkey = jax.random.split(key)
 subkeys = jax.random.split(subkey, mc_iterations)
-df = pd.DataFrame(index=range(mc_iterations), columns=["time_found"])
+delta_v_range = np.logspace(-3, -1, 20)  # 20 different dV values
+maneuver_proportion_range = np.linspace(0, 0.2, 10)
+index = pd.MultiIndex.from_product(
+    [delta_v_range, maneuver_proportion_range, range(mc_iterations)], 
+    names=['delta_v_magnitude', 'maneuver_proportion', 'mc_iteration']
+)
+df = pd.DataFrame(index=index, columns=["times_found"])
 
-for mc_iteration_i, subkey in enumerate(subkeys):
-    
-    mc_iterations = 10
-    total_fuel = 10.0
-    delta_v_magnitude = 1
+# Plot:
 
-    true_state = jnp.load("cache/true_state_1000.npy")
-    posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
-
-    times_found = 0
-    azimuth_key, elevation_key = jax.random.split(subkey)
-    random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
-    random_impulse_elevation = jax.random.uniform(azimuth_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
-
-    vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
-    vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
-    vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
-
-    random_impulse_velocity = jnp.array([vx, vy, vz])
-    random_impulse_velocity = (1e-5 / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
-
-    
-    for i in range(measurement_time):
-        print(times_found, i)
-        key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
-        true_state = dynamical_system.flow(0.0, time_range, true_state)
-
-        if jax.random.bernoulli(thrust_key, p=0.5):
-            key, subkey = jax.random.split(key)
-            total_fuel -= 1e-5
-            print(total_fuel)
-            print(random_impulse_velocity)
-            true_state = true_state.at[3:].add(random_impulse_velocity)
-        
-        
-        prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
-        predicted_state = jnp.mean(prior_ensemble, axis=0)
-
-        if tracking_measurability(true_state, predicted_state):
-            times_found += 1
-            posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
-        else:
-            posterior_ensemble = prior_ensemble
-
-    found_proportion = times_found / measurement_time
-    df.loc[mc_iteration_i, "times_found"] = found_proportion
+# Detection rate vs dV magnitude
+# Detection rate vs Frequency of maneuver
+# Cumulative tracking performance over time
 
 
+for delta_v_magnitude in jnp.logspace(-3, -1, 20):
+    print(delta_v_magnitude)
+    for maneuver_proportion in maneuver_proportion_range:
+        print(maneuver_proportion)
+        for mc_iteration_i, subkey in enumerate(subkeys):
+            df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")]
+            total_fuel = 10.0
 
-# # Suddenly it maneuvers
-# Plot total delta V vs frequency of detection
+            true_state = jnp.load("cache/true_state_1000.npy")
+            posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
 
+            times_found = 0
+            azimuth_key, elevation_key = jax.random.split(subkey)
+            random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
+            random_impulse_elevation = jax.random.uniform(elevation_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
+
+            vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
+            vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
+            vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
+
+            random_impulse_velocity = jnp.array([vx, vy, vz])
+            random_impulse_velocity = (delta_v_magnitude / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
+
+            for i in range(measurement_time):
+                key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
+                true_state = dynamical_system.flow(0.0, time_range, true_state)
+
+                if jax.random.bernoulli(thrust_key, p=maneuver_proportion):
+                    if total_fuel > 0:
+                        key, subkey = jax.random.split(key)
+                        total_fuel -= delta_v_magnitude
+                        true_state = true_state.at[3:].add(random_impulse_velocity)
+
+
+                prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
+                predicted_state = jnp.mean(prior_ensemble, axis=0)
+
+                if tracking_measurability(true_state, predicted_state):
+                    times_found += 1
+                    posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+                else:
+                    posterior_ensemble = prior_ensemble
+
+            found_proportion = times_found / measurement_time
+            print(found_proportion)
+            df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")] = found_proportion
