@@ -43,7 +43,7 @@ class EnGMF(AbstractFilter, strict=True):
         bandwidth = self.silverman_bandwidth_scaling * (
             (4) / (prior_ensemble.shape[0] * (prior_ensemble.shape[-1] + 2))
         ) ** ((2) / (prior_ensemble.shape[-1] + 4))
-        emperical_covariance = jnp.cov(prior_ensemble.T)  # + 1e-8 * jnp.eye(2)
+        emperical_covariance = jnp.cov(prior_ensemble.T) + 1e-8 * jnp.eye(6)
 
         state_dim = emperical_covariance.shape[0]
         i_indices = jnp.arange(state_dim)[:, None]
@@ -138,6 +138,7 @@ class EnGMF(AbstractFilter, strict=True):
             + measurement_system.covariance
         )
         innovation_cov = (innovation_cov + innovation_cov.T) / 2  # Symmetrize
+        innovation_cov = innovation_cov + 1e-12 * jnp.eye(innovation_cov.shape[0])
         if self.debug:
             assert isinstance(innovation_cov, Float[Array, "measurement_dim measurement_dim"])
 
@@ -157,7 +158,10 @@ class EnGMF(AbstractFilter, strict=True):
         # \hat{P}_{k | k}^{(i)} = ( I - K_{k}^{(i)} H_{k}^{(i)} ) \hat{P}_{k | k - 1}^{(i)}
         posterior_covariance = (
             jnp.eye(point.shape[0]) - kalman_gain @ measurement_jacobian
-        ) @ prior_mixture_covariance
+        ) @ prior_mixture_covariance @ (
+            jnp.eye(point.shape[0]) - kalman_gain @ measurement_jacobian
+        ).T + kalman_gain @ measurement_system.covariance @ kalman_gain.T
+        
 
         if self.debug:
             assert isinstance(

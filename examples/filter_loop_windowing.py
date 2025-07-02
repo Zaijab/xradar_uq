@@ -119,42 +119,42 @@ def cr3bp_time_to_real(cr3bp_time):
     return cr3bp_time * TU_seconds
 
 # Examples from the papers:
-print(f"10 minutes real = {real_time_to_cr3bp(10*60):.6f} TU")  # ≈ 0.00160 TU
-print(f"2.5 hours real = {real_time_to_cr3bp(2.5*3600):.6f} TU")  # ≈ 0.024 TU
-print(f"NRHO period 1.3632 TU = {cr3bp_time_to_real(1.3632)/86400:.2f} days")  # ≈ 5.9 days
+# print(f"10 minutes real = {real_time_to_cr3bp(10*60):.6f} TU")  # ≈ 0.00160 TU
+# print(f"2.5 hours real = {real_time_to_cr3bp(2.5*3600):.6f} TU")  # ≈ 0.024 TU
+# print(f"NRHO period 1.3632 TU = {cr3bp_time_to_real(1.3632)/86400:.2f} days")  # ≈ 5.9 days
 
-def generate_measurement_schedule_cr3bp():
-    """Generate measurement times in CR3BP units"""
+# def generate_measurement_schedule_cr3bp():
+#     """Generate measurement times in CR3BP units"""
     
-    # NRHO period from Document 25
-    orbit_period_tu = 1.3632096570  # TU (about 5.9 real days)
+#     # NRHO period from Document 25
+#     orbit_period_tu = 1.3632096570  # TU (about 5.9 real days)
     
-    # Tracklet parameters (convert to TU)
-    tracklet_duration_tu = real_time_to_cr3bp(2.5 * 3600)  # 2.5 hours → TU
-    measurement_interval_tu = real_time_to_cr3bp(10 * 60)   # 10 minutes → TU
-    gap_duration_tu = orbit_period_tu / 4  # Quarter orbit gap
+#     # Tracklet parameters (convert to TU)
+#     tracklet_duration_tu = real_time_to_cr3bp(2.5 * 3600)  # 2.5 hours → TU
+#     measurement_interval_tu = real_time_to_cr3bp(10 * 60)   # 10 minutes → TU
+#     gap_duration_tu = orbit_period_tu / 4  # Quarter orbit gap
     
-    print(f"Tracklet duration: {tracklet_duration_tu:.6f} TU")
-    print(f"Measurement interval: {measurement_interval_tu:.6f} TU") 
-    print(f"Gap between tracklets: {gap_duration_tu:.6f} TU")
+#     print(f"Tracklet duration: {tracklet_duration_tu:.6f} TU")
+#     print(f"Measurement interval: {measurement_interval_tu:.6f} TU") 
+#     print(f"Gap between tracklets: {gap_duration_tu:.6f} TU")
     
-    schedule = []
-    total_time_tu = 5 * orbit_period_tu  # 5 orbits ≈ 30 days
+#     schedule = []
+#     total_time_tu = 5 * orbit_period_tu  # 5 orbits ≈ 30 days
     
-    current_time = 0
-    while current_time < total_time_tu:
-        # Start tracklet
-        tracklet_end = current_time + tracklet_duration_tu
+#     current_time = 0
+#     while current_time < total_time_tu:
+#         # Start tracklet
+#         tracklet_end = current_time + tracklet_duration_tu
         
-        # Measurements every 10 minutes during tracklet
-        while current_time < tracklet_end and current_time < total_time_tu:
-            schedule.append(current_time)
-            current_time += measurement_interval_tu
+#         # Measurements every 10 minutes during tracklet
+#         while current_time < tracklet_end and current_time < total_time_tu:
+#             schedule.append(current_time)
+#             current_time += measurement_interval_tu
             
-        # Gap until next tracklet  
-        current_time = tracklet_end + gap_duration_tu
+#         # Gap until next tracklet  
+#         current_time = tracklet_end + gap_duration_tu
     
-    return jnp.array(schedule)
+#     return jnp.array(schedule)
 
 # This gives you measurement times in proper CR3BP units
 
@@ -284,51 +284,62 @@ def plot_3d_state_projections(true_state, posterior_ensemble, prior_ensemble=Non
     plt.tight_layout()
     return fig
 
-true_state = jnp.load("cache/true_state_1000.npy")
-posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
-plot_3d_state_projections(true_state, posterior_ensemble)
-plt.savefig("figures/filtering_loop/post_1000_tracking.png")
+# plot_3d_state_projections(true_state, posterior_ensemble)
+# plt.savefig("figures/filtering_loop/post_1000_tracking.png")
+
+import pandas as pd
 
 mc_iterations = 10
-total_fuel = 10
-delta_v_magnitude = 1
 key, subkey = jax.random.split(key)
-subkeys = jax.random.split(subkey, 10)
-# for subkey in subkeys:
-#     times_found = 0
-#     azimuth_key, elevation_key = jax.random.split(subkey)
-#     random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
-#     random_impulse_elevation = jax.random.uniform(azimuth_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
+subkeys = jax.random.split(subkey, mc_iterations)
+df = pd.DataFrame(index=range(mc_iterations), columns=["time_found"])
 
-#     vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
-#     vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
-#     vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
+for mc_iteration_i, subkey in enumerate(subkeys):
+    
+    mc_iterations = 10
+    total_fuel = 10.0
+    delta_v_magnitude = 1
 
-#     random_impulse_velocity = jnp.array([vx, vy, vz])
-#     random_impulse_velocity = (1e-5 / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
+    true_state = jnp.load("cache/true_state_1000.npy")
+    posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
+
+    times_found = 0
+    azimuth_key, elevation_key = jax.random.split(subkey)
+    random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
+    random_impulse_elevation = jax.random.uniform(azimuth_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
+
+    vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
+    vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
+    vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
+
+    random_impulse_velocity = jnp.array([vx, vy, vz])
+    random_impulse_velocity = (1e-5 / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
 
     
-#     for i in range(measurement_time):
-#         print(times_found, i)
-#         key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
-#         true_state = dynamical_system.flow(0.0, time_range, true_state)
+    for i in range(measurement_time):
+        print(times_found, i)
+        key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
+        true_state = dynamical_system.flow(0.0, time_range, true_state)
 
-#         if jax.random.bernoulli(thrust_key, p=0.1):
-#             key, subkey = jax.random.split(key)
-#             print(random_impulse_velocity)
-#             true_state = true_state.at[3:].add(random_impulse_velocity)
+        if jax.random.bernoulli(thrust_key, p=0.5):
+            key, subkey = jax.random.split(key)
+            total_fuel -= 1e-5
+            print(total_fuel)
+            print(random_impulse_velocity)
+            true_state = true_state.at[3:].add(random_impulse_velocity)
         
         
-#         prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
-#         predicted_state = jnp.mean(prior_ensemble, axis=0)
+        prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
+        predicted_state = jnp.mean(prior_ensemble, axis=0)
 
-#         if tracking_measurability(true_state, predicted_state):
-#             times_found += 1
-#             posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
-#         else:
-#             posterior_ensemble = prior_ensemble
+        if tracking_measurability(true_state, predicted_state):
+            times_found += 1
+            posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+        else:
+            posterior_ensemble = prior_ensemble
 
-#     # print(times_found / measurement_time)
+    found_proportion = times_found / measurement_time
+    df.loc[mc_iteration_i, "times_found"] = found_proportion
 
 
 

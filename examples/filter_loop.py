@@ -11,45 +11,38 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 from beartype import beartype as typechecker
 from xradar_uq.dynamical_systems import CR3BP
-from xradar_uq.measurement_systems import RangeSensor
-from xradar_uq.stochastic_filters import EnGMF
+from xradar_uq.measurement_systems import Radar, AnglesOnly
+from xradar_uq.stochastic_filters import EnGMF, EnKF
 
 key = jax.random.key(42)
-key, subkey = jax.random.split(key)
 
-"""
-Now we shall instantiate the objects we imported.
-They will constitute our state space system.
-"""
-
-
-"""
-First, the dynamical system object.
-"""
 dynamical_system = CR3BP()
-
-"""
-Next, the measurement system.
-It is a `callable` and has a `covariance` property.
-"""
-measurement_system = RangeSensor()
-
-"""
-Lastly, the filter itself.
-Python has a builtin function called `filter` already.
-In order to avoid overwriting the name `filter`, we call it `stochastic_filter.
-"""
+measurement_system = Radar()
 stochastic_filter = EnGMF()
-true_state = dynamical_system.initial_state()
-posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0)
-errors = []
 
-for _ in range(10):
-    key, subkey = jax.random.split(key)
-    true_state = dynamical_system.flow(0.0, 1.0, true_state)
-    prior_ensemble = eqx.filter_vmap(dynamical_system.flow, in_axes=(None, None, 0))(0.0, jnp.array(1.0), posterior_ensemble)
-    posterior_ensemble = stochastic_filter.update(subkey, prior_ensemble, measurement_system(true_state), measurement_system)
-    errors.append(true_state - jnp.mean(posterior_ensemble, axis=0))
+total_time = 200.0
 
-rmse = jnp.sqrt(jnp.mean(jnp.asarray(errors) ** 2))
-rmse
+mc_iterations = 3
+
+for num_measurements in [400, 200, 100, 50, 25, 15, 10]:
+    print(num_measurements, end=": ")
+    mc_rmses = []
+    for mc_iteration in range(mc_iterations):
+        key, subkey = jax.random.split(key)
+        true_state = dynamical_system.initial_state()
+        posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0, batch_size=1_000)
+        errors = []
+        time_points = jnp.linspace(0, total_time, num_measurements)
+        dt = float(time_points[1] - time_points[0])
+        for _ in range(num_measurements - 1):
+            key, subkey = jax.random.split(key)
+            true_state = dynamical_system.flow(0.0, dt, true_state)
+            prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, dt, posterior_ensemble)
+            posterior_ensemble = stochastic_filter.update(subkey, prior_ensemble, measurement_system(true_state), measurement_system)
+            error = true_state - jnp.mean(posterior_ensemble, axis=0)
+            errors.append(error)
+        rmse = jnp.sqrt(jnp.mean(jnp.asarray(errors) ** 2))
+        print(rmse, end=", ")
+        mc_rmses.append(rmse)
+    print()
+    print(jnp.mean(jnp.asarray(mc_rmses)))
