@@ -159,161 +159,6 @@ def generate_measurement_schedule_cr3bp():
 # This gives you measurement times in proper CR3BP units
 
 
-@jaxtyped(typechecker=typechecker)
-def get_kde_mode_center(
-    key: Key[Array, ""],
-    ensemble: Float[Array, "n_components state_dim"],
-    n_candidates: int = 1000,
-) -> Float[Array, "state_dim"]:
-    """Find the mode (highest density point) of the KDE"""
-    
-    kde = silverman_kde_estimate(ensemble)
-    
-    # Sample candidates from the KDE itself
-    candidates = kde.sample(seed=key, sample_shape=(n_candidates,))
-    
-    # Evaluate probability density at each candidate
-    log_probs = kde.log_prob(candidates)
-    
-    # Return the candidate with highest density
-    max_idx = jnp.argmax(log_probs)
-    return candidates[max_idx]
-
-@jaxtyped(typechecker=typechecker)
-def get_uncertainty_weighted_kde_center(
-    key: Key[Array, ""],
-    ensemble: Float[Array, "n_components state_dim"],
-    n_samples: int = 1000,
-) -> Float[Array, "state_dim"]:
-    """Weight pointing toward regions of high local uncertainty"""
-    
-    kde = silverman_kde_estimate(ensemble)
-    
-    # Sample from the KDE
-    samples = kde.sample(seed=key, sample_shape=(n_samples,))
-    
-    # Compute local uncertainty (inverse of density)
-    densities = kde.prob(samples)
-    uncertainty_weights = 1.0 / (densities + 1e-8)  # Add small epsilon for numerical stability
-    
-    # Normalize weights
-    weights = uncertainty_weights / jnp.sum(uncertainty_weights)
-    
-    # Return uncertainty-weighted centroid
-    return jnp.sum(weights[:, None] * samples, axis=0)
-
-@jaxtyped(typechecker=typechecker)
-def get_kde_mode_optimized(
-    key: Key[Array, ""],
-    ensemble: Float[Array, "n_components state_dim"],
-    n_starts: int = 10,
-    learning_rate: float = 0.01,
-    n_steps: int = 100
-) -> Float[Array, "state_dim"]:
-    """Find KDE mode using gradient ascent"""
-    
-    kde = silverman_kde_estimate(ensemble)
-    
-    # Multiple random starts to avoid local maxima
-    keys = jax.random.split(key, n_starts)
-    initial_points = jax.vmap(lambda k: kde.sample(seed=k))(keys)
-    
-    def gradient_ascent_step(point):
-        grad_fn = jax.grad(kde.log_prob)
-        return point + learning_rate * grad_fn(point)
-    
-    def find_mode_from_start(start_point):
-        def step_fn(point, _):
-            new_point = gradient_ascent_step(point)
-            return new_point, new_point
-        
-        final_point, _ = jax.lax.scan(step_fn, start_point, None, length=n_steps)
-        return final_point, kde.log_prob(final_point)
-    
-    # Find mode from each starting point
-    final_points, final_probs = jax.vmap(find_mode_from_start)(initial_points)
-    
-    # Return the best one
-    best_idx = jnp.argmax(final_probs)
-    return final_points[best_idx]
-
-@jaxtyped(typechecker=typechecker)
-def get_information_optimal_center(
-    key: Key[Array, ""],
-    ensemble: Float[Array, "n_components state_dim"],
-    measurement_system: AbstractMeasurementSystem,
-    n_candidates: int = 500,
-) -> Float[Array, "state_dim"]:
-    """Point to maximize expected Fisher Information Gain"""
-    
-    kde = silverman_kde_estimate(ensemble)
-    
-    # Sample candidate pointing directions
-    candidates = kde.sample(seed=key, sample_shape=(n_candidates,))
-    
-    def expected_information_gain(pointing_state):
-        # Fisher Information at this pointing direction
-        H = jax.jacfwd(measurement_system)(pointing_state)
-        fisher_info = jnp.trace(H.T @ jnp.linalg.solve(measurement_system.covariance, H))
-        
-        # Weight by probability density
-        prob_density = kde.prob(pointing_state)
-        
-        return fisher_info * prob_density
-    
-    # Compute expected information for each candidate
-    expected_info = jax.vmap(expected_information_gain)(candidates)
-    
-    # Return candidate with maximum expected information
-    best_idx = jnp.argmax(expected_info)
-    return candidates[best_idx]
-
-@jaxtyped(typechecker=typechecker)
-def get_entropy_reduction_center(
-    key: Key[Array, ""],
-    ensemble: Float[Array, "n_components state_dim"],
-    measurement_system: AbstractMeasurementSystem,
-    n_candidates: int = 500,
-) -> Float[Array, "state_dim"]:
-    """Point to maximize entropy reduction"""
-    
-    kde = silverman_kde_estimate(ensemble)
-    
-    # Current entropy of the distribution
-    sample_points = kde.sample(seed=key, sample_shape=(1000,))
-    current_entropy = -jnp.mean(kde.log_prob(sample_points))
-    
-    # Sample candidate pointing directions
-    candidates = kde.sample(seed=key, sample_shape=(n_candidates,))
-    
-    def entropy_reduction_score(pointing_state):
-        # Simulate making a measurement at this pointing direction
-        H = jax.jacfwd(measurement_system)(pointing_state)
-        measurement_cov = H @ jnp.cov(ensemble.T) @ H.T + measurement_system.covariance
-        
-        # Approximate entropy reduction (inverse of measurement uncertainty)
-        return -jnp.log(jnp.linalg.det(measurement_cov))
-    
-    scores = jax.vmap(entropy_reduction_score)(candidates)
-    best_idx = jnp.argmax(scores)
-    return candidates[best_idx]
-
-@jaxtyped(typechecker=typechecker)
-def get_quantile_based_center(
-    key: Key[Array, ""],
-    ensemble: Float[Array, "n_components state_dim"],
-    quantile: float = 0.5,  # 0.5 = median
-    n_samples: int = 1000,
-) -> Float[Array, "state_dim"]:
-    """Use quantiles of the KDE distribution"""
-    
-    kde = silverman_kde_estimate(ensemble)
-    
-    # Sample from KDE
-    samples = kde.sample(seed=key, sample_shape=(n_samples,))
-    
-    # Compute quantiles along each dimension
-    return jnp.quantile(samples, quantile, axis=0)
 
 # We were tracking an object
 
@@ -336,20 +181,20 @@ measurement_time = 1000
 
 # We're tracking an object initially
 # I guess this is kinda like burn-in lol
-# for i in range(measurement_time):
-#     print(times_found, i)
-#     key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
-#     true_state = dynamical_system.flow(0.0, time_range, true_state)
-#     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
-#     predicted_state = jnp.mean(prior_ensemble, axis=0)
+for i in range(measurement_time):
+    print(times_found, i)
+    key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
+    true_state = dynamical_system.flow(0.0, time_range, true_state)
+    prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
+    predicted_state = jnp.mean(prior_ensemble, axis=0)
     
-#     if tracking_measurability(true_state, predicted_state):
-#         times_found += 1
-#         posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
-#     else:
-#         posterior_ensemble = prior_ensemble
+    if tracking_measurability(true_state, predicted_state):
+        times_found += 1
+        posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+    else:
+        posterior_ensemble = prior_ensemble
 
-# print(times_found / measurement_time)
+print(times_found / measurement_time)
 
 # Constant Thrust Impulse Velocity random initialization
 
