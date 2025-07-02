@@ -18,6 +18,7 @@ dependencies = [
     "matplotlib",
     "tensorflow_probability",
     "distreqx",
+    "tqdm",
 ]
 
 [project.optional-dependencies]

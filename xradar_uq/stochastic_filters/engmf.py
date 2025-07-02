@@ -19,6 +19,7 @@ class EnGMF(AbstractFilter, strict=True):
     
     debug: bool = False
     sampling_function: callable = jax.tree_util.Partial(sample_gaussian_mixture)
+    silverman_bandwidth_scaling: float = 1.0
     
     @jaxtyped(typechecker=typechecker)
     @eqx.filter_jit
@@ -39,7 +40,7 @@ class EnGMF(AbstractFilter, strict=True):
         if self.debug:
             assert isinstance(subkeys, Key[Array, "batch_dim"])
 
-        bandwidth = (
+        bandwidth = self.silverman_bandwidth_scaling * (
             (4) / (prior_ensemble.shape[0] * (prior_ensemble.shape[-1] + 2))
         ) ** ((2) / (prior_ensemble.shape[-1] + 4))
         emperical_covariance = jnp.cov(prior_ensemble.T)  # + 1e-8 * jnp.eye(2)
