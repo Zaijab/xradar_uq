@@ -77,3 +77,10 @@ batch = jnp.ones((10, 6))
 # https://docs.kidger.site/equinox/api/transformations/#vectorisation-and-parallelisation
 # In theory, I could have this 
 new_state = eqx.filter_vmap(dynamical_system.flow)(initial_time, final_time, batch)
+
+# To get an entire trajectory, do this.
+# We need to stop 
+ts, ys = eqx.filter_vmap(dynamical_system.trajectory, in_axes=(None, None, 0, None))(initial_time, final_time, batch, saveat)
+
+# ts.shape == (batch_dim, time_dim) == (10, 100)
+# ys.shape == (batch_dim, time_dim, state_dim) == (10, 100, 6)
