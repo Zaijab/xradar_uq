@@ -19,6 +19,7 @@ dependencies = [
     "tensorflow_probability",
     "distreqx",
     "tqdm",
+    "pandas",
 ]
 
 [project.optional-dependencies]
