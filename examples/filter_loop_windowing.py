@@ -289,7 +289,7 @@ def plot_3d_state_projections(true_state, posterior_ensemble, prior_ensemble=Non
 
 import pandas as pd
 
-mc_iterations = 3
+mc_iterations = 1
 key, subkey = jax.random.split(key)
 subkeys = jax.random.split(subkey, mc_iterations)
 delta_v_range = np.logspace(-3, -1, 20)  # 20 different dV values
@@ -308,9 +308,9 @@ df = pd.DataFrame(index=index, columns=["times_found"])
 
 
 for delta_v_magnitude in jnp.logspace(-3, -1, 20):
-    print(delta_v_magnitude)
+    print(f"{delta_v_magnitude=}")
     for maneuver_proportion in maneuver_proportion_range:
-        print(maneuver_proportion)
+        print(f"{maneuver_proportion=}")
         for mc_iteration_i, subkey in enumerate(subkeys):
             df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")]
             total_fuel = 10.0

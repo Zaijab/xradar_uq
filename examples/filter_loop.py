@@ -11,6 +11,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 from beartype import beartype as typechecker
 from diffrax import PIDController
+from tqdm.auto import tqdm
 
 from xradar_uq.dynamical_systems import CR3BP
 from xradar_uq.measurement_systems import AnglesOnly, Radar
@@ -26,7 +27,7 @@ total_time = 2.5
 
 mc_iterations = 3
 
-for num_measurements in [400, 200, 100, 50, 25, 15, 10]:
+for num_measurements in tqdm([400, 200, 100, 50, 25, 15, 10]):
     print(num_measurements, end=": ")
     mc_rmses = []
     for mc_iteration in range(mc_iterations):
