@@ -181,20 +181,20 @@ measurement_time = 1000
 
 # # We're tracking an object initially
 # # I guess this is kinda like burn-in lol
-# for i in range(measurement_time):
-#     print(times_found, i)
-#     key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
-#     true_state = dynamical_system.flow(0.0, time_range, true_state)
-#     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
-#     predicted_state = jnp.mean(prior_ensemble, axis=0)
+for i in range(measurement_time):
+    print(times_found, i)
+    key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
+    true_state = dynamical_system.flow(0.0, time_range, true_state)
+    prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
+    predicted_state = jnp.mean(prior_ensemble, axis=0)
     
-#     if tracking_measurability(true_state, predicted_state):
-#         times_found += 1
-#         posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
-#     else:
-#         posterior_ensemble = prior_ensemble
+    if tracking_measurability(true_state, predicted_state):
+        times_found += 1
+        posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+    else:
+        posterior_ensemble = prior_ensemble
 
-# print(times_found / measurement_time)
+print(times_found / measurement_time)
 
 # Constant Thrust Impulse Velocity random initialization
 
