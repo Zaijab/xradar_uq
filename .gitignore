@@ -1,5 +1,6 @@
 venv/
 figures/
+cache/
 .direnv/
 __pycache__/
 *.pyc
