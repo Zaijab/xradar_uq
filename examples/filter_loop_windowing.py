@@ -126,96 +126,6 @@ for i in range(measurement_time):
 
 print(times_found / measurement_time)
 
-# Constant Thrust Impulse Velocity random initialization
-
-import matplotlib.pyplot as plt
-import numpy as np
-from mpl_toolkits.mplot3d import Axes3D
-
-def plot_3d_state_projections(true_state, posterior_ensemble, prior_ensemble=None, 
-                             figsize=(15, 10), title_prefix="State"):
-    """
-    Plot 3D position state in all 2D projections plus 3D view.
-    
-    Parameters:
-    -----------
-    true_state : Array, shape (6,)
-        True state vector [x, y, z, vx, vy, vz]
-    posterior_ensemble : Array, shape (N, 6) 
-        Posterior ensemble of states
-    prior_ensemble : Array, shape (N, 6), optional
-        Prior ensemble of states
-    figsize : tuple
-        Figure size
-    title_prefix : str
-        Prefix for plot titles
-    """
-    
-    # Extract position components (first 3 dimensions)
-    true_pos = true_state[:3]
-    post_pos = posterior_ensemble[:, :3]
-    
-    if prior_ensemble is not None:
-        prior_pos = prior_ensemble[:, :3]
-    
-    # Create figure with subplots
-    fig = plt.figure(figsize=figsize)
-    
-    # Define projection pairs and labels
-    projections = [(0, 1, 'X', 'Y'), (0, 2, 'X', 'Z'), (1, 2, 'Y', 'Z')]
-    
-    # Plot 2D projections
-    for i, (dim1, dim2, label1, label2) in enumerate(projections):
-        ax = fig.add_subplot(2, 2, i+1)
-        
-        # Plot prior if available
-        if prior_ensemble is not None:
-            ax.scatter(prior_pos[:, dim1], prior_pos[:, dim2], 
-                      c='red', alpha=0.6, s=20, label='Prior')
-        
-        # Plot posterior
-        ax.scatter(post_pos[:, dim1], post_pos[:, dim2], 
-                  c='blue', alpha=0.7, s=20, label='Posterior')
-        
-        # Plot true state
-        ax.scatter(true_pos[dim1], true_pos[dim2], 
-                  c='green', s=100, marker='o', 
-                  edgecolors='black', linewidth=2, label='True State')
-        
-        ax.set_xlabel(f'{label1} Position')
-        ax.set_ylabel(f'{label2} Position')
-        ax.set_title(f'{title_prefix}: {label1}-{label2} Projection')
-        ax.grid(True, alpha=0.3)
-        ax.legend()
-    
-    # Plot 3D view
-    ax3d = fig.add_subplot(2, 2, 4, projection='3d')
-    
-    # Plot prior if available
-    if prior_ensemble is not None:
-        ax3d.scatter(prior_pos[:, 0], prior_pos[:, 1], prior_pos[:, 2],
-                    c='red', alpha=0.6, s=20, label='Prior')
-    
-    # Plot posterior
-    ax3d.scatter(post_pos[:, 0], post_pos[:, 1], post_pos[:, 2],
-                c='blue', alpha=0.7, s=20, label='Posterior')
-    
-    # Plot true state
-    ax3d.scatter(true_pos[0], true_pos[1], true_pos[2],
-                c='green', s=100, marker='o',
-                edgecolors='black', linewidth=2, label='True State')
-    
-    ax3d.set_xlabel('X Position')
-    ax3d.set_ylabel('Y Position')
-    ax3d.set_zlabel('Z Position')
-    ax3d.set_title(f'{title_prefix}: 3D View')
-    ax3d.legend()
-    
-    plt.tight_layout()
-    return fig
-
-# plot_3d_state_projections(true_state, posterior_ensemble)
-# plt.savefig("figures/filtering_loop/post_1000_tracking.png")
 
 import pandas as pd
 
@@ -236,6 +146,20 @@ df = pd.DataFrame(index=index, columns=["times_found"])
 # Detection rate vs Frequency of maneuver
 # Cumulative tracking performance over time
 
+@eqx.filter_jit
+def random_impulse_velocity(key: Key[Array, ""]) -> Float[Array, "3"]:
+    azimuth_key, elevation_key = jax.random.split(subkey)
+    random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
+    random_impulse_elevation = jax.random.uniform(elevation_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
+    
+    vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
+    vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
+    vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
+    
+    random_impulse_velocity = jnp.array([vx, vy, vz])
+    random_impulse_velocity = (delta_v_magnitude / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
+    return random_impulse_velocity
+    
 
 for delta_v_magnitude in jnp.logspace(-3, -1, 20):
     print(f"{delta_v_magnitude=}")
@@ -249,16 +173,6 @@ for delta_v_magnitude in jnp.logspace(-3, -1, 20):
             posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
 
             times_found = 0
-            azimuth_key, elevation_key = jax.random.split(subkey)
-            random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
-            random_impulse_elevation = jax.random.uniform(elevation_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
-
-            vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
-            vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
-            vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
-
-            random_impulse_velocity = jnp.array([vx, vy, vz])
-            random_impulse_velocity = (delta_v_magnitude / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
 
             for i in range(measurement_time):
                 key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
@@ -283,3 +197,6 @@ for delta_v_magnitude in jnp.logspace(-3, -1, 20):
             found_proportion = times_found / measurement_time
             print(found_proportion)
             df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")] = found_proportion
+        break
+    break
+    
