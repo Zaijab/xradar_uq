@@ -1,0 +1,8 @@
+This directory contains files which are cached operations from intermediate code.
+These are usually saved for operations which are somewhat expensive.
+
+* "cache/true_state_1000.npy"
+
+
+
+* "cache/posterior_1000.npy"
