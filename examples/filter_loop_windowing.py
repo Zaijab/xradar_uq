@@ -109,6 +109,19 @@ time_range = 0.242
 # # How many measurements * time_range
 measurement_time = 1000
 
+def tracking_measurability(state, predicted_state, elevation_fov=(5 * jnp.pi / 180), azimuth_fov=(5 * jnp.pi / 180), range_fov=1):
+
+    rho = np.linalg.norm(state[:3])
+    rho_pred = np.linalg.norm(predicted_state[:3])
+    elevation = np.arcsin(state[2] / rho)
+    elevation_pred = np.arcsin(predicted_state[2] / rho_pred)
+    azimuth = np.arctan2(state[1], state[0])
+    azimuth_pred = np.arctan2(predicted_state[1], predicted_state[0])
+    
+    return (np.abs(elevation - elevation_pred) <= elevation_fov / 2 and
+            np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
+
+
 # # We're tracking an object initially
 # # I guess this is kinda like burn-in lol
 for i in range(measurement_time):
@@ -124,79 +137,83 @@ for i in range(measurement_time):
     else:
         posterior_ensemble = prior_ensemble
 
+
+jnp.save("cache/true_state_1000.npy", true_state)
+jnp.save("cache/posterior_1000_window.npy", posterior_ensemble)
+
 print(times_found / measurement_time)
 
 
-import pandas as pd
+# import pandas as pd
 
-mc_iterations = 1
-key, subkey = jax.random.split(key)
-subkeys = jax.random.split(subkey, mc_iterations)
-delta_v_range = np.logspace(-3, -1, 20)  # 20 different dV values
-maneuver_proportion_range = np.linspace(0, 0.2, 10)
-index = pd.MultiIndex.from_product(
-    [delta_v_range, maneuver_proportion_range, range(mc_iterations)], 
-    names=['delta_v_magnitude', 'maneuver_proportion', 'mc_iteration']
-)
-df = pd.DataFrame(index=index, columns=["times_found"])
+# mc_iterations = 1
+# key, subkey = jax.random.split(key)
+# subkeys = jax.random.split(subkey, mc_iterations)
+# delta_v_range = np.logspace(-3, -1, 20)  # 20 different dV values
+# maneuver_proportion_range = np.linspace(0, 0.2, 10)
+# index = pd.MultiIndex.from_product(
+#     [delta_v_range, maneuver_proportion_range, range(mc_iterations)], 
+#     names=['delta_v_magnitude', 'maneuver_proportion', 'mc_iteration']
+# )
+# df = pd.DataFrame(index=index, columns=["times_found"])
 
-# Plot:
+# # Plot:
 
-# Detection rate vs dV magnitude
-# Detection rate vs Frequency of maneuver
-# Cumulative tracking performance over time
+# # Detection rate vs dV magnitude
+# # Detection rate vs Frequency of maneuver
+# # Cumulative tracking performance over time
 
-@eqx.filter_jit
-def random_impulse_velocity(key: Key[Array, ""]) -> Float[Array, "3"]:
-    azimuth_key, elevation_key = jax.random.split(subkey)
-    random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
-    random_impulse_elevation = jax.random.uniform(elevation_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
+# @eqx.filter_jit
+# def random_impulse_velocity(key: Key[Array, ""]) -> Float[Array, "3"]:
+#     azimuth_key, elevation_key = jax.random.split(subkey)
+#     random_impulse_azimuth = jax.random.uniform(azimuth_key, minval=0, maxval=2 * jnp.pi)
+#     random_impulse_elevation = jax.random.uniform(elevation_key, minval=- jnp.pi / 2, maxval=jnp.pi / 2)
     
-    vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
-    vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
-    vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
+#     vx = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.cos(random_impulse_azimuth)
+#     vy = delta_v_magnitude * jnp.cos(random_impulse_elevation) * jnp.sin(random_impulse_azimuth)
+#     vz = delta_v_magnitude * jnp.sin(random_impulse_elevation)
     
-    random_impulse_velocity = jnp.array([vx, vy, vz])
-    random_impulse_velocity = (delta_v_magnitude / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
-    return random_impulse_velocity
+#     random_impulse_velocity = jnp.array([vx, vy, vz])
+#     random_impulse_velocity = (delta_v_magnitude / jnp.linalg.norm(random_impulse_velocity)) * random_impulse_velocity
+#     return random_impulse_velocity
     
 
-for delta_v_magnitude in jnp.logspace(-3, -1, 20):
-    print(f"{delta_v_magnitude=}")
-    for maneuver_proportion in maneuver_proportion_range:
-        print(f"{maneuver_proportion=}")
-        for mc_iteration_i, subkey in enumerate(subkeys):
-            df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")]
-            total_fuel = 10.0
+# for delta_v_magnitude in jnp.logspace(-3, -1, 20):
+#     print(f"{delta_v_magnitude=}")
+#     for maneuver_proportion in maneuver_proportion_range:
+#         print(f"{maneuver_proportion=}")
+#         for mc_iteration_i, subkey in enumerate(subkeys):
+#             df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")]
+#             total_fuel = 10.0
 
-            true_state = jnp.load("cache/true_state_1000.npy")
-            posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
+#             true_state = jnp.load("cache/true_state_1000.npy")
+#             posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
 
-            times_found = 0
+#             times_found = 0
 
-            for i in range(measurement_time):
-                key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
-                true_state = dynamical_system.flow(0.0, time_range, true_state)
+#             for i in range(measurement_time):
+#                 key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
+#                 true_state = dynamical_system.flow(0.0, time_range, true_state)
 
-                if jax.random.bernoulli(thrust_key, p=maneuver_proportion):
-                    if total_fuel > 0:
-                        key, subkey = jax.random.split(key)
-                        total_fuel -= delta_v_magnitude
-                        true_state = true_state.at[3:].add(random_impulse_velocity)
+#                 if jax.random.bernoulli(thrust_key, p=maneuver_proportion):
+#                     if total_fuel > 0:
+#                         key, subkey = jax.random.split(key)
+#                         total_fuel -= delta_v_magnitude
+#                         true_state = true_state.at[3:].add(random_impulse_velocity)
 
 
-                prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
-                predicted_state = jnp.mean(prior_ensemble, axis=0)
+#                 prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
+#                 predicted_state = jnp.mean(prior_ensemble, axis=0)
 
-                if tracking_measurability(true_state, predicted_state):
-                    times_found += 1
-                    posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
-                else:
-                    posterior_ensemble = prior_ensemble
+#                 if tracking_measurability(true_state, predicted_state):
+#                     times_found += 1
+#                     posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+#                 else:
+#                     posterior_ensemble = prior_ensemble
 
-            found_proportion = times_found / measurement_time
-            print(found_proportion)
-            df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")] = found_proportion
-        break
-    break
+#             found_proportion = times_found / measurement_time
+#             print(found_proportion)
+#             df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")] = found_proportion
+#         break
+#     break
     
