@@ -20,6 +20,7 @@ dependencies = [
     "distreqx",
     "tqdm",
     "pandas",
+    "jaxkd",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = ["pytest", "black", "isort"]
 
 [tool.mypy]
 python_executable = ".direnv/python-3.11.11/bin/python"
+disable_error_code = ["import-untyped"]
 
 [tool.flake8]
 extend-ignore = ["F722"]

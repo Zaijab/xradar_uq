@@ -1,15 +1,27 @@
-# RangeSensor r < rthresh
-# AnglesOnly uses r_0 < r < r_1
-# Radar uses r_0 < r < r_1
+"""
+This is a funciton
+RangeSensor r < rthresh
+AnglesOnly uses r_0 < r < r_1
+Radar uses r_0 < r < r_1
+"""
 
-def tracking_measurability(state, predicted_state, elevation_fov=(5 * jnp.pi / 180), azimuth_fov=(5 * jnp.pi / 180), range_fov=1):
+import equinox as eqx
+import jax.numpy as jnp
 
-    rho = np.linalg.norm(state[:3])
-    rho_pred = np.linalg.norm(predicted_state[:3])
-    elevation = np.arcsin(state[2] / rho)
-    elevation_pred = np.arcsin(predicted_state[2] / rho_pred)
-    azimuth = np.arctan2(state[1], state[0])
-    azimuth_pred = np.arctan2(predicted_state[1], predicted_state[0])
+
+@eqx.filter_jit
+def tracking_measurability(state,
+                           predicted_state,
+                           elevation_fov=jnp.deg2rad(5),
+                           azimuth_fov=jnp.deg2rad(5),
+                           range_fov=1):
+
+    rho = jnp.linalg.norm(state[:3])
+    rho_pred = jnp.linalg.norm(predicted_state[:3])
+    elevation = jnp.arcsin(state[2] / rho)
+    elevation_pred = jnp.arcsin(predicted_state[2] / rho_pred)
+    azimuth = jnp.arctan2(state[1], state[0])
+    azimuth_pred = jnp.arctan2(predicted_state[1], predicted_state[0])
     
-    return (np.abs(elevation - elevation_pred) <= elevation_fov / 2 and
-            np.abs(azimuth - azimuth_pred) <= azimuth_fov / 2)
+    return ((jnp.abs(elevation - elevation_pred) <= elevation_fov / 2) &
+            (jnp.abs(azimuth - azimuth_pred) <= azimuth_fov / 2))

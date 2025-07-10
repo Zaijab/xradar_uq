@@ -3,6 +3,35 @@ These are usually saved for operations which are somewhat expensive.
 
 * "cache/true_state_1000.npy"
 
-
+This is a shape (6,) array which is the result of 1000 time steps of CR3BP
 
 * "cache/posterior_1000.npy"
+
+* Code:
+
+#+BEGIN_SRC
+dynamical_system = CR3BP()
+stochastic_filter = EnGMF()
+measurement_system = Radar()
+
+
+# TU: 0.242 is approx 1 Day
+time_range = 0.242
+
+# # How many measurements * time_range
+measurement_time = 1000
+
+for i in range(measurement_time):
+    print(times_found, i)
+    key, update_key, measurement_key, window_center_key = jax.random.split(key, 4)
+    true_state = dynamical_system.flow(0.0, time_range, true_state)
+    prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
+    predicted_state = jnp.mean(prior_ensemble, axis=0)
+    
+    if tracking_measurability(true_state, predicted_state):
+        times_found += 1
+        posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
+    else:
+        posterior_ensemble = prior_ensemble
+
+#+END_SRC

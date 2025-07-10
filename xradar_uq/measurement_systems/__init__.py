@@ -13,3 +13,7 @@ from xradar_uq.measurement_systems.angles_only import (
 from xradar_uq.measurement_systems.radar import (
     Radar as Radar,
 )
+
+from xradar_uq.measurement_systems.windowing import (
+    tracking_measurability as tracking_measurability,
+)
