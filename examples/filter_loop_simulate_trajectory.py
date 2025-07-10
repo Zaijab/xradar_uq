@@ -38,16 +38,6 @@ key, subkey = jax.random.split(key)
 random_impulse_velocity = generate_random_impulse_velocity(subkey, delta_v_magnitude)
 
 
-# for i in range(measurement_time):
-#     key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
-#     true_state = dynamical_system.flow(0.0, time_range, true_state)
-
-#     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
-#     predicted_state = jnp.mean(prior_ensemble, axis=0)
-
-posterior_ensemble.shape
-
-
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
 def simulate_thrust(
@@ -98,8 +88,8 @@ measurement_time = 1000 # How many measurements * time_range
 mc_iterations = 1
 key, subkey = jax.random.split(key)
 subkeys = jax.random.split(subkey, mc_iterations)
-delta_v_range = [] #np.logspace(-3, -1, 20)
-maneuver_proportion_range = [0.09] #np.linspace(0, 0.2, 10)
+delta_v_range = np.logspace(-3, -1, 20)
+maneuver_proportion_range = np.linspace(0, 0.2, 10)
 
 index = pd.MultiIndex.from_product(
     [delta_v_range, maneuver_proportion_range, range(mc_iterations)], 
@@ -140,6 +130,7 @@ for delta_v_magnitude in delta_v_range:
 
 
                 if tracking_measurability(true_state, jnp.mean(prior_ensemble, axis=0)): # 0.077
+                    print("FOUND FIRST TIME")
                     times_found += 1
                     posterior_ensemble = stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state, measurement_key), measurement_system)
                 else:
@@ -151,6 +142,19 @@ for delta_v_magnitude in delta_v_range:
                     sparsity_distance = compute_sparsity_measures(simulated_trajectories,
                                                                   int(jnp.sqrt(simulated_trajectories.shape[0])))
 
+                    # DI EnGMF
+                    
+                    # Largest Minimum around circle around mean of GMM
+                    # Largest maximum eigenvalue around circle around mean of GMM
+                    # Largest mean eigenvalue around circle around mean of GMM
+                    # Above calcu to task the second sensor
+                    # Radius of the circle is FOV of the camera
+                    
+                    # How to loop through multiple sensors
+                    # Task near the mean state +/- some azimuth elevation
+                    # Find some delta v / proportions in which 2 sensor has biggest improvement
+                    # Area proxies - Alpha shape and convexification
+                    
                     if tracking_measurability(true_state, simulated_trajectories[jnp.argmin(sparsity_distance)]) or tracking_measurability(true_state, simulated_trajectories[jnp.argmax(sparsity_distance)]):
                         print("FOUND WITH SECOND SENSOR")
                         times_found += 1
@@ -161,5 +165,4 @@ for delta_v_magnitude in delta_v_range:
             found_proportion = times_found / measurement_time
             print(found_proportion)
             df.loc[(float(delta_v_magnitude), float(maneuver_proportion), mc_iteration_i), ("times_found")] = found_proportion
-        break
-    break
+        

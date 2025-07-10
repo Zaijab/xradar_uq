@@ -11,8 +11,10 @@ from xradar_uq.dynamical_systems import AbstractContinuousDynamicalSystem
 
 @jaxtyped(typechecker=typechecker)
 class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
-    mu: float = 0.012150584269940
-    # mu: float = 0.012150585609624
+    ### Dynamical System Parameters
+    mu: float = 0.012150584269940 # Sometimes I see, 0.012150585609624?
+
+    ### Solver Parameters
     dt: float = 0.0001
     solver: AbstractSolver = Dopri8()
     stepsize_controller: AbstractStepSizeController = PIDController(rtol=1e-12, atol=1e-14)
