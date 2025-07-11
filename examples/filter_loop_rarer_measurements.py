@@ -18,7 +18,6 @@ true_state = dynamical_system.initial_state()
 posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0)
 
 
-
 for _ in range(10):
     key, subkey = jax.random.split(key)
     true_state = dynamical_system.flow(0.0, 1.0, true_state)
