@@ -3,12 +3,11 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from beartype import beartype as typechecker
-from tqdm.auto import tqdm
+from jaxtyping import jaxtyped
 
 from xradar_uq.dynamical_systems import CR3BP
 from xradar_uq.measurement_systems import Radar
 from xradar_uq.stochastic_filters import EnGMF
-
 
 key = jax.random.key(42)
 
@@ -32,8 +31,10 @@ key, subkey = jax.random.split(key)
 outer_vertices = jax.random.multivariate_normal(subkey, shape=(outer,),mean=jnp.zeros(3), cov=jnp.eye(3))
 outer_vertices /= jnp.linalg.norm(outer_vertices, axis=1, keepdims=True)
 
-import matplotlib.pyplot as plt
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+
 
 def plot_step1_results(interior_vertices, boundary_vertices):
     Path("figures/reachability").mkdir(parents=True, exist_ok=True)
@@ -51,10 +52,12 @@ def plot_step1_results(interior_vertices, boundary_vertices):
 
 plot_step1_results(seed_vertices, outer_vertices)
 
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial import Delaunay
-import matplotlib.pyplot as plt
-from pathlib import Path
+
 
 def build_delaunay_mesh(interior_vertices, boundary_vertices):
     """
@@ -339,14 +342,15 @@ mesh_data = {
 
 ### Step 3
 
+from pathlib import Path
+
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-import equinox as eqx
-import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
 from diffrax import SaveAt
-from tqdm.auto import tqdm
+
 
 def map_deltav_to_6d_states(deltav_vertices, initial_state, delta_v_magnitude):
     """
@@ -799,12 +803,14 @@ trajectory_data = execute_step3_and_4(
 
 ### Step 5
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
 from scipy.spatial import Delaunay
+
 
 def map_vertices_to_outcomes(mesh_data, trajectory_data):
     """
@@ -1276,12 +1282,14 @@ refinement_data = execute_step5_refinement_heuristics(
 
 ### Step 6
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
 from scipy.spatial import Delaunay
+
 
 def generate_ellipsoidal_vertices(selected_edges, mesh_vertices, sigma=1.0, key=None):
     """
@@ -1741,12 +1749,14 @@ step6_data = execute_step6_mesh_refinement(
     key=jax.random.key(42)        # Random key for vertex generation
 )
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
 from diffrax import SaveAt
+
 
 def compute_new_vertex_trajectories(step6_data, trajectory_data, dynamical_system, 
                                    initial_state, delta_v_magnitude):
@@ -2236,12 +2246,14 @@ step7_data = execute_step7_update_trajectories(
     delta_v_magnitude=delta_v_magnitude       # ΔV scaling
 )
 
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
-import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
+import numpy as np
 from scipy.spatial import Delaunay
+
 
 def rebuild_complete_mesh_with_trajectories(step7_data):
     """
@@ -2925,3 +2937,54 @@ print(f"  Final vertices: {final_results['complete_mesh_data']['n_vertices']}")
 print(f"  Iterations: {len(history)}")
 print(f"  Converged: {final_results['should_stop']}")
 
+import pickle
+
+import jax.numpy as jnp
+
+
+def save_rse_results(final_results, filepath):
+    """Save RSE results using pickle."""
+    # Convert JAX arrays to numpy for better compatibility
+    results_to_save = convert_jax_to_numpy(final_results)
+    
+    with open(filepath, 'wb') as f:
+        pickle.dump(results_to_save, f)
+    print(f"Saved RSE results to {filepath}")
+
+def load_rse_results(filepath):
+    """Load RSE results from pickle."""
+    with open(filepath, 'rb') as f:
+        results = pickle.load(f)
+    
+    # Convert numpy arrays back to JAX
+    return convert_numpy_to_jax(results)
+
+def convert_jax_to_numpy(obj):
+    """Recursively convert JAX arrays to numpy."""
+    if isinstance(obj, jnp.ndarray):
+        return jnp.asarray(obj)  # Ensures numpy conversion
+    elif isinstance(obj, dict):
+        return {k: convert_jax_to_numpy(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return type(obj)(convert_jax_to_numpy(item) for item in obj)
+    else:
+        return obj
+
+def convert_numpy_to_jax(obj):
+    """Recursively convert numpy arrays to JAX."""
+    import numpy as np
+    if isinstance(obj, np.ndarray):
+        return jnp.array(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_numpy_to_jax(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return type(obj)(convert_numpy_to_jax(item) for item in obj)
+    else:
+        return obj
+
+# Usage
+
+save_rse_results(final_results, "rse_results.pkl")
+
+# Later...
+loaded_results = load_rse_results("rse_results.pkl")
