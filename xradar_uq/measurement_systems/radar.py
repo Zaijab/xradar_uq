@@ -19,6 +19,7 @@ class Radar(AbstractMeasurementSystem, strict=True):
                                                     (0.05 * jnp.pi / 180) ** 2,
                                                     (0.05 * jnp.pi / 180) ** 2]))
     )
+    
 
 
     @jaxtyped(typechecker=typechecker)
@@ -33,10 +34,10 @@ class Radar(AbstractMeasurementSystem, strict=True):
         satellite_pos = state[:3]
         
         # Earth position in barycentric coordinates
-        earth_pos = jnp.array([-self.mu, 0.0, 0.0])
+        moon_pos = jnp.array([1.0 - self.mu, 0.0, 0.0])
         
         # Satellite position relative to Earth
-        relative_pos = satellite_pos - earth_pos
+        relative_pos = satellite_pos - moon_pos
         x, y, z = relative_pos[0], relative_pos[1], relative_pos[2]
         
         # Range, azimuth, elevation from Earth
