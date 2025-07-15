@@ -12,7 +12,8 @@ from xradar_uq.dynamical_systems import AbstractContinuousDynamicalSystem
 @jaxtyped(typechecker=typechecker)
 class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
     ### Dynamical System Parameters
-    mu: float = 0.012150584269940 # Sometimes I see, 0.012150585609624?
+    # mu: float = 0.012150584269940 # Sometimes I see, 0.012150585609624?
+    mu: float = 0.01215058560962404
 
     ### Solver Parameters
     dt: float = 0.0001

@@ -33,10 +33,10 @@ class Radar(AbstractMeasurementSystem, strict=True):
         # Satellite position in barycentric coordinates
         satellite_pos = state[:3]
         
-        # Earth position in barycentric coordinates
+        # Moon position in barycentric coordinates
         moon_pos = jnp.array([1.0 - self.mu, 0.0, 0.0])
         
-        # Satellite position relative to Earth
+        # Satellite position relative to Moon
         relative_pos = satellite_pos - moon_pos
         x, y, z = relative_pos[0], relative_pos[1], relative_pos[2]
         
