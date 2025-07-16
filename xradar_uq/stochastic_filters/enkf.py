@@ -11,11 +11,8 @@ from xradar_uq.measurement_systems import AbstractMeasurementSystem
 
 @jaxtyped(typechecker=typechecker)
 class EnKF(AbstractFilter, strict=True):
-    inflation_factor: float = 1.05
+    inflation_factor: float = 1.01
     debug: bool = False
-
-    def initialize(self, key, ):
-        return 0
 
     @jaxtyped(typechecker=typechecker)
     @eqx.filter_jit
