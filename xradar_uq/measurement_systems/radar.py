@@ -24,7 +24,7 @@ class Radar(AbstractMeasurementSystem, strict=True):
             (5e-9)**2,             
             (5e-9)**2
         ])
-    )
+    ))
     
 
 

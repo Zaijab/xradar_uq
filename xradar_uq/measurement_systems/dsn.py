@@ -41,6 +41,7 @@ class DeepSpaceNetwork(AbstractMeasurementSystem, strict=True):
         
         # Satellite position in barycentric coordinates
         satellite_pos = state[:3]
+        satellite_vel = state[3:]
         
         # earth position in barycentric coordinates
         earth_pos = jnp.array([- self.mu, 0.0, 0.0])
