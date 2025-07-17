@@ -3,27 +3,30 @@ import jax
 import jax.numpy as jnp
 from beartype import beartype as typechecker
 from jaxtyping import Array, Float, Key, jaxtyped
+
 from xradar_uq.measurement_systems import AbstractMeasurementSystem
 
-# 
 
-class Radar(AbstractMeasurementSystem, strict=True):
+class DeepSpaceNetwork(AbstractMeasurementSystem, strict=True):
     """
     This measurement system takes in an array whose first three indices are the spatial dimensions.
     Then returns the distance, elevation and azimuth.
     """
 
     mu: float = 0.01215058560962404
-    covariance: Float[Array, "3 3"] = eqx.field(
+    covariance: Float[Array, "4 4"] = eqx.field(
         default_factory=lambda: jnp.diag(jnp.array([
             # https://science.nasa.gov/learn/basics-of-space-flight/chapter18-1/
             # 1 meter range precision → DU^2
             (1.0/(1000 * 389703))**2,
+            #
+            # 0.1mm/s range-rate → DU/TU^2
+            (1e-7/389703*382981)**2,
             # https://descanso.jpl.nasa.gov/performmetrics/DSN_NavSysAccuracy.html
             # 5 nanorad azimuth → rad^2
             (5e-9)**2,             
             (5e-9)**2
-        ])
+        ]))
     )
     
 
@@ -34,7 +37,7 @@ class Radar(AbstractMeasurementSystem, strict=True):
         self,
         state: Float[Array, "state_dim"],
         key: Key[Array, ""] | None = None,
-    ) -> Float[Array, "3"]:
+    ) -> Float[Array, "4"]:
         
         # Satellite position in barycentric coordinates
         satellite_pos = state[:3]
@@ -48,10 +51,12 @@ class Radar(AbstractMeasurementSystem, strict=True):
         
         # Range, azimuth, elevation from Earth
         rho = jnp.sqrt(x**2 + y**2 + z**2)
+        rho_dot = jnp.dot(relative_pos, satellite_vel) / rho
         alpha = jnp.arctan2(y, x)          # Azimuth
         epsilon = jnp.arcsin(z / rho)      # Elevation
+
         
-        measurements = jnp.array([rho, alpha, epsilon])
+        measurements = jnp.array([rho, rho_dot, alpha, epsilon])
 
         if key is not None:
             measurements = jax.random.multivariate_normal(

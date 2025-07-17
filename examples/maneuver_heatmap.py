@@ -25,7 +25,7 @@ heatmap_data = df.groupby(['dv_rounded', 'mp_rounded'])['times_found'].mean().ro
 
 # Create heatmap
 plt.figure(figsize=(12, 8))
-heatmap = sns.heatmap(heatmap_data, annot=True, cmap='RdYlBu_r', center=0.5, 
+heatmap = sns.heatmap(heatmap_data, annot=True, cmap='RdYlBu', center=0.5, 
                       cbar_kws={'label': 'Detection Rate'}, fmt='.3f')
 
 # Convert x-axis labels to percentages

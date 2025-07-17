@@ -21,6 +21,8 @@ dependencies = [
     "tqdm",
     "pandas",
     "jaxkd",
+    "scikit-image",
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]

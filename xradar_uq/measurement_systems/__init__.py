@@ -14,6 +14,10 @@ from xradar_uq.measurement_systems.radar import (
     Radar as Radar,
 )
 
+from xradar_uq.measurement_systems.dsn import (
+    DeepSpaceNetwork as DeepSpaceNetwork,
+)
+
 from xradar_uq.measurement_systems.windowing import (
     tracking_measurability as tracking_measurability,
 )

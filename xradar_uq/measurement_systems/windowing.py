@@ -10,13 +10,12 @@ import jax.numpy as jnp
 from beartype import beartype as typechecker
 from jaxtyping import Array, Bool, Float, jaxtyped
 
-
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
 def tracking_measurability(
     state: Float[Array, "state_dim"],
     predicted_state: Float[Array, "state_dim"], 
-    observer_position: Float[Array, "3"] = jnp.array([-0.012150584269940, 0.0, 0.0]),
+    observer_position: Float[Array, "3"] = jnp.array([-0.01215058560962404, 0.0, 0.0]),
     elevation_fov: float  | Float[Array, ""] = jnp.deg2rad(5),
     azimuth_fov: float | Float[Array, ""] = jnp.deg2rad(5),
     range_fov: float  | Float[Array, ""] = jnp.inf

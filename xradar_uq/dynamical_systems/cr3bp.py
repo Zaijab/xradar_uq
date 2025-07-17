@@ -12,7 +12,6 @@ from xradar_uq.dynamical_systems import AbstractContinuousDynamicalSystem
 @jaxtyped(typechecker=typechecker)
 class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
     ### Dynamical System Parameters
-    # mu: float = 0.012150584269940 # Sometimes I see, 0.012150585609624?
     mu: float = 0.01215058560962404
 
     ### Solver Parameters
@@ -31,15 +30,17 @@ class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
         key: Key[Array, "..."] | None = None,
         **kwargs,
     ) -> Float[Array, "state_dim"]:
-        mean = jnp.array([
-            1.021339954388544,
-            -0.000000045869005,
-            -0.181619950369762,
-            0.000000617839352,
-            -0.101759879771430,
-            0.000001049698173]
-        )
-        cov = 1.0e-08 *jnp.array([
+        # mean = jnp.array([
+        #     1.021339954388544,
+        #     -0.000000045869005,
+        #     -0.181619950369762,
+        #     0.000000617839352,
+        #     -0.101759879771430,
+        #     0.000001049698173]
+        # )
+        mean = jnp.array([-0.45693046, -0.86889969, -0.45956069,
+                          0.68220284, -0.48569515, -0.23824544])
+        cov = 1.0e-08 * jnp.array([
             [0.067741479217036,  -0.000029214433641,   0.000292500436172,   0.000343197998120,  -0.000801894296500,  -0.000076851751508],
             [-0.000029214433641,   0.067949657828148,  -0.000045655889447,   0.000112485276059,   0.002893878948354,  -0.000038999497288],
             [0.000292500436172,  -0.000045655889447,   0.067754170807105,  -0.000931574297640,   0.000434803811832,   0.000042975146838],

@@ -65,6 +65,9 @@ for delta_v_magnitude in jnp.logspace(-3, -1, 20):
                 key, update_key, measurement_key, window_center_key, thrust_key = jax.random.split(key, 5)
                 true_state = dynamical_system.flow(0.0, time_range, true_state)
 
+                # What time in the day did the man. happen
+                # Propagate for (day - time) thrust then propagate (time)
+                
                 if jax.random.bernoulli(thrust_key, p=maneuver_proportion):
                     if total_fuel > 0:
                         key, subkey = jax.random.split(key)
