@@ -86,10 +86,13 @@ def evaluate_tracking_single_case(
     time_range: float = 0.242,
     measurement_time: int = 1000,
     initial_fuel: float = 10.0,
-) -> Float[Array, ""]:
+) -> float | Float[Array, ""]:
     # Load cached states
-    true_state = jnp.load("cache/true_state_1000.npy")
-    posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
+    # true_state = jnp.load("cache/true_state_1000.npy")
+    # posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
+    key, subkey = jax.random.split(key)
+    true_state = dynamical_system.initial_state()
+    posterior_ensemble = dynamical_system.generate(subkey)
     
     # Generate random impulse velocity
     key, subkey = jax.random.split(key)
@@ -119,6 +122,7 @@ def evaluate_tracking_single_case(
     
     # Calculate proportion
     found_proportion = times_found / measurement_time
+    jax.debug.print("{}", found_proportion)
     return found_proportion
 
 
@@ -173,8 +177,12 @@ stochastic_filter = EnGMF()
 measurement_system = DeepSpaceNetwork()
 
 # Define parameter ranges
-delta_v_range = jnp.logspace(-3, -1, 20)
-maneuver_proportion_range = jnp.linspace(0, 0.2, 20)
+# delta_v_range = jnp.logspace(-3, -1, 20)
+# maneuver_proportion_range = jnp.linspace(0, 0.2, 20)
+
+delta_v_range = jnp.logspace(-3, 0, 20)
+maneuver_proportion_range = jnp.linspace(0, 0.5, 50)
+
 
 # Run optimized computation
 key = jax.random.key(42)
@@ -185,7 +193,7 @@ results = evaluate_tracking_grid(
     dynamical_system, 
     measurement_system, 
     stochastic_filter,
-    mc_iterations=10
+    mc_iterations=1
 )
 
 # Convert to DataFrame format matching your original
