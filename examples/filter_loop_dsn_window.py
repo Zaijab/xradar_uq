@@ -128,6 +128,7 @@ def evaluate_tracking_single_case(
 
 # For vectorizing over parameter ranges
 @jaxtyped(typechecker=typechecker)
+@eqx.filter_jit
 def evaluate_tracking_grid(
     delta_v_range: Float[Array, "n_dv"],
     maneuver_proportion_range: Float[Array, "n_mp"],
