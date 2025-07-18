@@ -10,6 +10,30 @@ from xradar_uq.measurement_systems import Radar, tracking_measurability, DeepSpa
 from xradar_uq.statistics import generate_random_impulse_velocity
 from xradar_uq.stochastic_filters import EnGMF
 
+@jaxtyped(typechecker=typechecker)
+@eqx.filter_jit
+def find_optimal_second_sensor_state(
+    prior_ensemble: Float[Array, "batch_size state_dim"], 
+) -> Float[Array, "state_dim"]:
+    # Generate constraint boundary points (from your code)
+    constraint_distance = 5.0
+    boundary_resolution = 50
+    t = jnp.linspace(0, 4, 4*boundary_resolution, endpoint=False)
+    side = jnp.floor(t).astype(int)
+    local_t = t - side
+    azimuth_constraint = jnp.where(side == 0, constraint_distance, jnp.where(side == 1, constraint_distance - 2*constraint_distance*local_t, jnp.where(side == 2, -constraint_distance, -constraint_distance + 2*constraint_distance*local_t)))
+    elevation_constraint = jnp.where(side == 0, -constraint_distance + 2*constraint_distance*local_t, jnp.where(side == 1, constraint_distance, jnp.where(side == 2, constraint_distance - 2*constraint_distance*local_t, -constraint_distance)))
+    
+    # Convert to 3D coordinates (degrees to radians, then spherical to Cartesian)
+    az_rad, el_rad = jnp.deg2rad(azimuth_constraint), jnp.deg2rad(elevation_constraint)
+    points_3d = jnp.stack([jnp.cos(el_rad)*jnp.cos(az_rad), jnp.cos(el_rad)*jnp.sin(az_rad), jnp.sin(el_rad)], axis=1)
+    
+    # Build GMM from ensemble positions and evaluate at boundary points
+    gmm = silverman_kde_estimate(prior_ensemble[:, :3])
+    pdf_values = eqx.filter_vmap(gmm.pdf)(points_3d)
+    optimal_position = points_3d[jnp.argmax(pdf_values)]
+    
+    return jnp.concatenate([optimal_position, jnp.zeros(3)])
 
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
@@ -51,9 +75,10 @@ def tracking_scan_step(
     # Flow ensemble forward
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
     predicted_state = jnp.mean(prior_ensemble, axis=0)
+    second_predicted_state = find_optimal_second_sensor_state(prior_ensemble)
     
     # Check tracking measurability
-    is_measurable = tracking_measurability(true_state_next, predicted_state)
+    is_measurable = tracking_measurability(true_state_next, predicted_state) | tracking_measurability(true_state_next, second_predicted_state)
     
     # Update ensemble conditionally
     posterior_ensemble_next = jnp.where(
@@ -182,7 +207,7 @@ measurement_system = DeepSpaceNetwork()
 # maneuver_proportion_range = jnp.linspace(0, 0.2, 20)
 
 delta_v_range = jnp.logspace(-3, 0, 20)
-maneuver_proportion_range = jnp.linspace(0, 0.5, 50)
+maneuver_proportion_range = jnp.linspace(0, 0.5, 20)
 
 
 # Run optimized computation
@@ -194,7 +219,7 @@ results = evaluate_tracking_grid(
     dynamical_system, 
     measurement_system, 
     stochastic_filter,
-    mc_iterations=1
+    mc_iterations=10
 )
 
 # Convert to DataFrame format matching your original
