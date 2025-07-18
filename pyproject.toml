@@ -23,6 +23,7 @@ dependencies = [
     "jaxkd",
     "scikit-image",
     "scikit-learn",
+    "ott-jax",
 ]
 
 [project.optional-dependencies]
