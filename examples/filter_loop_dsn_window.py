@@ -7,8 +7,33 @@ from jaxtyping import Array, Float, Key, jaxtyped, Int, Bool
 
 from xradar_uq.dynamical_systems import CR3BP
 from xradar_uq.measurement_systems import Radar, tracking_measurability, DeepSpaceNetwork, AbstractMeasurementSystem
-from xradar_uq.statistics import generate_random_impulse_velocity
+from xradar_uq.statistics import generate_random_impulse_velocity, silverman_kde_estimate
 from xradar_uq.stochastic_filters import EnGMF
+
+@jaxtyped(typechecker=typechecker)
+@eqx.filter_jit
+def find_random_second_sensor_state(
+    prior_ensemble: Float[Array, "batch_size state_dim"], key,
+) -> Float[Array, "state_dim"]:
+    # Generate constraint boundary points (from your code)
+    constraint_distance = 5.0
+    boundary_resolution = 50
+    t = jnp.linspace(0, 4, 4*boundary_resolution, endpoint=False)
+    side = jnp.floor(t).astype(int)
+    local_t = t - side
+    azimuth_constraint = jnp.where(side == 0, constraint_distance, jnp.where(side == 1, constraint_distance - 2*constraint_distance*local_t, jnp.where(side == 2, -constraint_distance, -constraint_distance + 2*constraint_distance*local_t)))
+    elevation_constraint = jnp.where(side == 0, -constraint_distance + 2*constraint_distance*local_t, jnp.where(side == 1, constraint_distance, jnp.where(side == 2, constraint_distance - 2*constraint_distance*local_t, -constraint_distance)))
+    
+    # Convert to 3D coordinates (degrees to radians, then spherical to Cartesian)
+    az_rad, el_rad = jnp.deg2rad(azimuth_constraint), jnp.deg2rad(elevation_constraint)
+    points_3d = jnp.stack([jnp.cos(el_rad)*jnp.cos(az_rad), jnp.cos(el_rad)*jnp.sin(az_rad), jnp.sin(el_rad)], axis=1)
+    
+    # Build GMM from ensemble positions and evaluate at boundary points
+    gmm = silverman_kde_estimate(prior_ensemble[:, :3])
+    pdf_values = eqx.filter_vmap(gmm.pdf)(points_3d)
+    optimal_position = points_3d[jax.random.choice(key, pdf_values.shape[0])]
+    
+    return jnp.concatenate([optimal_position, jnp.zeros(3)])
 
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
@@ -35,6 +60,7 @@ def find_optimal_second_sensor_state(
     
     return jnp.concatenate([optimal_position, jnp.zeros(3)])
 
+
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
 def tracking_scan_step(
@@ -54,7 +80,7 @@ def tracking_scan_step(
     posterior_ensemble, true_state, total_fuel, times_found = carry
     
     # Split keys for different random operations
-    update_key, measurement_key, thrust_key = jax.random.split(key, 3)
+    update_key, measurement_key, thrust_key, state_key = jax.random.split(key, 4)
     
     # Flow true state forward
     true_state_next = dynamical_system.flow(0.0, time_range, true_state)
@@ -75,7 +101,7 @@ def tracking_scan_step(
     # Flow ensemble forward
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
     predicted_state = jnp.mean(prior_ensemble, axis=0)
-    second_predicted_state = find_optimal_second_sensor_state(prior_ensemble)
+    second_predicted_state = find_random_second_sensor_state(prior_ensemble, state_key)
     
     # Check tracking measurability
     is_measurable = tracking_measurability(true_state_next, predicted_state) | tracking_measurability(true_state_next, second_predicted_state)
@@ -109,12 +135,10 @@ def evaluate_tracking_single_case(
     measurement_system: AbstractMeasurementSystem,
     stochastic_filter: EnGMF,
     time_range: float = 0.242,
-    measurement_time: int = 1000,
-    initial_fuel: float = 10.0,
+    measurement_time: int = 200,
+    initial_fuel: float = 1.0,
 ) -> float | Float[Array, ""]:
     # Load cached states
-    # true_state = jnp.load("cache/true_state_1000.npy")
-    # posterior_ensemble = jnp.load("cache/posterior_1000_window.npy")
     key, subkey = jax.random.split(key)
     true_state = dynamical_system.initial_state()
     posterior_ensemble = dynamical_system.generate(subkey)
@@ -147,7 +171,6 @@ def evaluate_tracking_single_case(
     
     # Calculate proportion
     found_proportion = times_found / measurement_time
-    jax.debug.print("{}", found_proportion)
     return found_proportion
 
 
@@ -201,6 +224,7 @@ vectorized_fn = jax.vmap(
 dynamical_system = CR3BP()
 stochastic_filter = EnGMF()
 measurement_system = DeepSpaceNetwork()
+# measurement_system = Radar(covariance=jnp.diag(jnp.array([0.25, 0.01, 0.01])))
 
 # Define parameter ranges
 # delta_v_range = jnp.logspace(-3, -1, 20)
@@ -219,7 +243,7 @@ results = evaluate_tracking_grid(
     dynamical_system, 
     measurement_system, 
     stochastic_filter,
-    mc_iterations=10
+    mc_iterations=20
 )
 
 # Convert to DataFrame format matching your original
@@ -241,4 +265,5 @@ df = pd.DataFrame(
     index=index, 
     columns=["times_found"]
 )
+df.to_csv('cache/times_found_random_sensor_dsn_20.csv')
 df

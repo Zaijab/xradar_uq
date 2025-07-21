@@ -6,6 +6,10 @@ from jaxtyping import Array, Float, Key, jaxtyped
 
 from xradar_uq.measurement_systems import AbstractMeasurementSystem
 
+# Look at orbital stability
+# Experiment with prograde orbit
+# Chase work with Spencer
+# Look at different NRHO
 
 class DeepSpaceNetwork(AbstractMeasurementSystem, strict=True):
     """

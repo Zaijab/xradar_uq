@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
 # Read the CSV data
-df = pd.read_csv('cache/times_found_xla.csv')
+df = pd.read_csv('cache/times_found_pdf_sensor.csv')
 
 # Create a pivot table for easier analysis
 pivot_data = df.pivot_table(
@@ -53,5 +53,5 @@ if len(frontier_points) > 0:
         print(f"({mp:.1f}%, {dv:.3f})")
     
     plt.tight_layout()
-    plt.savefig("figures/frontier/custody_frontier.png")
+    plt.savefig("figures/frontier/custody_frontier_second_sensor.png")
     plt.show()
