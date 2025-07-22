@@ -12,8 +12,6 @@ import os
 
 os.makedirs('figures/maneuver_detection', exist_ok=True)
 
-os.makedirs('figures/maneuver_detection', exist_ok=True)
-
 def csv_to_heatmap(path):
     df = pd.read_csv(path)
 

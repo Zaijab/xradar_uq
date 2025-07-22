@@ -10,217 +10,8 @@ from xradar_uq.measurement_systems import Radar, tracking_measurability, DeepSpa
 from xradar_uq.statistics import generate_random_impulse_velocity, silverman_kde_estimate
 from xradar_uq.stochastic_filters import EnGMF
 
-@jaxtyped(typechecker=typechecker)
-@eqx.filter_jit
-def find_random_second_sensor_state(
-    prior_ensemble: Float[Array, "batch_size state_dim"], key,
-) -> Float[Array, "state_dim"]:
-    # Generate constraint boundary points (from your code)
-    constraint_distance = 5.0
-    boundary_resolution = 50
-    t = jnp.linspace(0, 4, 4*boundary_resolution, endpoint=False)
-    side = jnp.floor(t).astype(int)
-    local_t = t - side
-    azimuth_constraint = jnp.where(side == 0, constraint_distance, jnp.where(side == 1, constraint_distance - 2*constraint_distance*local_t, jnp.where(side == 2, -constraint_distance, -constraint_distance + 2*constraint_distance*local_t)))
-    elevation_constraint = jnp.where(side == 0, -constraint_distance + 2*constraint_distance*local_t, jnp.where(side == 1, constraint_distance, jnp.where(side == 2, constraint_distance - 2*constraint_distance*local_t, -constraint_distance)))
-    
-    # Convert to 3D coordinates (degrees to radians, then spherical to Cartesian)
-    az_rad, el_rad = jnp.deg2rad(azimuth_constraint), jnp.deg2rad(elevation_constraint)
-    points_3d = jnp.stack([jnp.cos(el_rad)*jnp.cos(az_rad), jnp.cos(el_rad)*jnp.sin(az_rad), jnp.sin(el_rad)], axis=1)
-    
-    # Build GMM from ensemble positions and evaluate at boundary points
-    gmm = silverman_kde_estimate(prior_ensemble[:, :3])
-    pdf_values = eqx.filter_vmap(gmm.pdf)(points_3d)
-    optimal_position = points_3d[jax.random.choice(key, pdf_values.shape[0])]
-    
-    return jnp.concatenate([optimal_position, jnp.zeros(3)])
-
-@jaxtyped(typechecker=typechecker)
-@eqx.filter_jit
-def find_optimal_second_sensor_state(
-    prior_ensemble: Float[Array, "batch_size state_dim"], 
-) -> Float[Array, "state_dim"]:
-    # Generate constraint boundary points (from your code)
-    constraint_distance = 5.0
-    boundary_resolution = 50
-    t = jnp.linspace(0, 4, 4*boundary_resolution, endpoint=False)
-    side = jnp.floor(t).astype(int)
-    local_t = t - side
-    azimuth_constraint = jnp.where(side == 0, constraint_distance, jnp.where(side == 1, constraint_distance - 2*constraint_distance*local_t, jnp.where(side == 2, -constraint_distance, -constraint_distance + 2*constraint_distance*local_t)))
-    elevation_constraint = jnp.where(side == 0, -constraint_distance + 2*constraint_distance*local_t, jnp.where(side == 1, constraint_distance, jnp.where(side == 2, constraint_distance - 2*constraint_distance*local_t, -constraint_distance)))
-    
-    # Convert to 3D coordinates (degrees to radians, then spherical to Cartesian)
-    az_rad, el_rad = jnp.deg2rad(azimuth_constraint), jnp.deg2rad(elevation_constraint)
-    points_3d = jnp.stack([jnp.cos(el_rad)*jnp.cos(az_rad), jnp.cos(el_rad)*jnp.sin(az_rad), jnp.sin(el_rad)], axis=1)
-    
-    # Build GMM from ensemble positions and evaluate at boundary points
-    gmm = silverman_kde_estimate(prior_ensemble[:, :3])
-    pdf_values = eqx.filter_vmap(gmm.pdf)(points_3d)
-    optimal_position = points_3d[jnp.argmax(pdf_values)]
-    
-    return jnp.concatenate([optimal_position, jnp.zeros(3)])
 
 
-@jaxtyped(typechecker=typechecker)
-@eqx.filter_jit
-def tracking_scan_step(
-    carry: tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
-    key: Key[Array, ""],
-    dynamical_system: CR3BP,
-    measurement_system: AbstractMeasurementSystem,
-    stochastic_filter: EnGMF,
-    time_range: float,
-    delta_v_magnitude: float | Float[Array, ""],
-    maneuver_proportion: float | Float[Array, ""],
-    random_impulse_velocity: Float[Array, "3"],
-) -> tuple[
-    tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
-    bool | Bool[Array, ""]
-]:
-    posterior_ensemble, true_state, total_fuel, times_found = carry
-    
-    # Split keys for different random operations
-    update_key, measurement_key, thrust_key, state_key = jax.random.split(key, 4)
-    
-    # Flow true state forward
-    true_state_next = dynamical_system.flow(0.0, time_range, true_state)
-    
-    # Check for maneuver
-    should_maneuver = jax.random.bernoulli(thrust_key, p=maneuver_proportion)
-    has_fuel = total_fuel > 0
-    do_maneuver = should_maneuver & has_fuel
-    
-    # Apply maneuver conditionally
-    true_state_next = jnp.where(
-        do_maneuver,
-        true_state_next.at[3:].add(random_impulse_velocity),
-        true_state_next
-    )
-    total_fuel_next = jnp.where(do_maneuver, total_fuel - delta_v_magnitude, total_fuel)
-    
-    # Flow ensemble forward
-    prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
-    predicted_state = jnp.mean(prior_ensemble, axis=0)
-    second_predicted_state = find_random_second_sensor_state(prior_ensemble, state_key)
-    
-    # Check tracking measurability
-    is_measurable = tracking_measurability(true_state_next, predicted_state) | tracking_measurability(true_state_next, second_predicted_state)
-    
-    # Update ensemble conditionally
-    posterior_ensemble_next = jnp.where(
-        is_measurable,
-        stochastic_filter.update(
-            update_key, 
-            prior_ensemble, 
-            measurement_system(true_state_next, measurement_key), 
-            measurement_system
-        ),
-        prior_ensemble
-    )
-    
-    # Update times found counter
-    times_found_next = times_found + jnp.where(is_measurable, 1, 0)
-    
-    new_carry = (posterior_ensemble_next, true_state_next, total_fuel_next, times_found_next)
-    return new_carry, is_measurable
-
-
-@jaxtyped(typechecker=typechecker)
-@eqx.filter_jit
-def evaluate_tracking_single_case(
-    delta_v_magnitude: float  | Float[Array, ""],
-    maneuver_proportion: float  | Float[Array, ""],
-    key: Key[Array, ""],
-    dynamical_system: CR3BP,
-    measurement_system: AbstractMeasurementSystem,
-    stochastic_filter: EnGMF,
-    time_range: float = 0.242,
-    measurement_time: int = 200,
-    initial_fuel: float = 1.0,
-) -> float | Float[Array, ""]:
-    # Load cached states
-    key, subkey = jax.random.split(key)
-    true_state = dynamical_system.initial_state()
-    posterior_ensemble = dynamical_system.generate(subkey)
-    
-    # Generate random impulse velocity
-    key, subkey = jax.random.split(key)
-    random_impulse_velocity = generate_random_impulse_velocity(subkey, delta_v_magnitude)
-    
-    # Generate keys for scan
-    keys = jax.random.split(key, measurement_time)
-    
-    # Initial carry state
-    initial_carry = (posterior_ensemble, true_state, initial_fuel, 0)
-    
-    # Create partial function for scan
-    scan_fn = jax.tree_util.Partial(
-        tracking_scan_step,
-        dynamical_system=dynamical_system,
-        measurement_system=measurement_system,
-        stochastic_filter=stochastic_filter,
-        time_range=time_range,
-        delta_v_magnitude=delta_v_magnitude,
-        maneuver_proportion=maneuver_proportion,
-        random_impulse_velocity=random_impulse_velocity,
-    )
-    
-    # Run scan
-    final_carry, detections = jax.lax.scan(scan_fn, initial_carry, keys)
-    _, _, _, times_found = final_carry
-    
-    # Calculate proportion
-    found_proportion = times_found / measurement_time
-    return found_proportion
-
-
-# For vectorizing over parameter ranges
-@jaxtyped(typechecker=typechecker)
-@eqx.filter_jit
-def evaluate_tracking_grid(
-    delta_v_range: Float[Array, "n_dv"],
-    maneuver_proportion_range: Float[Array, "n_mp"],
-    key: Key[Array, ""],
-    dynamical_system: CR3BP,
-    measurement_system: AbstractMeasurementSystem,
-    stochastic_filter: EnGMF,
-    mc_iterations: int = 1,
-) -> Float[Array, "n_dv n_mp mc_iterations"]:
-    n_dv, n_mp = len(delta_v_range), len(maneuver_proportion_range)
-    
-    # Create all parameter combinations
-    dv_flat = jnp.repeat(delta_v_range, n_mp * mc_iterations)
-    mp_flat = jnp.tile(jnp.repeat(maneuver_proportion_range, mc_iterations), n_dv)
-    
-    # Generate keys for all combinations
-    keys = jax.random.split(key, n_dv * n_mp * mc_iterations)
-    
-    # Vectorize over flattened arrays
-    vectorized_fn = jax.vmap(
-        evaluate_tracking_single_case, 
-        in_axes=(0, 0, 0, None, None, None)
-    )
-    
-    # Run vectorized computation
-    results_flat = vectorized_fn(
-        dv_flat, mp_flat, keys,
-        dynamical_system, measurement_system, stochastic_filter
-    )
-    
-    # Reshape to desired output format
-    results = results_flat.reshape(n_dv, n_mp, mc_iterations)
-    return results
-
-# Add this before calling evaluate_tracking_grid
-compiled_single_case = jax.jit(evaluate_tracking_single_case)
-
-# Then modify the vectorized_fn line to:
-vectorized_fn = jax.vmap(
-    compiled_single_case, 
-    in_axes=(0, 0, 0, None, None, None)
-)
-
-# Setup (same as your original)
 dynamical_system = CR3BP()
 stochastic_filter = EnGMF()
 measurement_system = DeepSpaceNetwork()
@@ -246,24 +37,24 @@ results = evaluate_tracking_grid(
     mc_iterations=20
 )
 
-# Convert to DataFrame format matching your original
-import pandas as pd
+# # Convert to DataFrame format matching your original
+# import pandas as pd
 
-n_dv, n_mp, n_mc = results.shape
-index_arrays = []
-for i, dv in enumerate(delta_v_range):
-    for j, mp in enumerate(maneuver_proportion_range):
-        for k in range(n_mc):
-            index_arrays.append([float(dv), float(mp), k])
+# n_dv, n_mp, n_mc = results.shape
+# index_arrays = []
+# for i, dv in enumerate(delta_v_range):
+#     for j, mp in enumerate(maneuver_proportion_range):
+#         for k in range(n_mc):
+#             index_arrays.append([float(dv), float(mp), k])
 
-index = pd.MultiIndex.from_tuples(
-    index_arrays, 
-    names=['delta_v_magnitude', 'maneuver_proportion', 'mc_iteration']
-)
-df = pd.DataFrame(
-    data=results.reshape(-1), 
-    index=index, 
-    columns=["times_found"]
-)
-df.to_csv('cache/times_found_random_sensor_dsn_20.csv')
-df
+# index = pd.MultiIndex.from_tuples(
+#     index_arrays, 
+#     names=['delta_v_magnitude', 'maneuver_proportion', 'mc_iteration']
+# )
+# df = pd.DataFrame(
+#     data=results.reshape(-1), 
+#     index=index, 
+#     columns=["times_found"]
+# )
+# df.to_csv('cache/times_found_random_sensor_dsn_20.csv')
+# df

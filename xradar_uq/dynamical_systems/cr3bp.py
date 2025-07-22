@@ -12,7 +12,21 @@ from xradar_uq.dynamical_systems import AbstractContinuousDynamicalSystem
 @jaxtyped(typechecker=typechecker)
 class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
     ### Dynamical System Parameters
+    # From JPL CR3BP Earth-Moon Mass Ratio
     mu: float = 0.01215058560962404
+
+    # Mean is likely to change to be initial points from CR3BP library
+    mean: Float[Array, "6"] = eqx.field(
+        default_factory=lambda: jnp.array([-0.45693046, -0.86889969, -0.45956069,
+                                   0.68220284, -0.48569515, -0.23824544])
+    )
+    # Covariance is from
+    # Efficient Orbit Determination Using Measurement-Directional State Transition Tensor
+    covariance: Float[Array, "6 6"] = eqx.field(
+    default_factory=lambda: jnp.block([[(2.5e-5) ** 2 * jnp.eye(3), jnp.zeros((3, 3))],
+                                       [jnp.zeros((3, 3)), (1e-6) ** 2 * jnp.eye(3)]])
+    )
+
 
     ### Solver Parameters
     dt: float = 0.0001
@@ -30,33 +44,10 @@ class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
         key: Key[Array, "..."] | None = None,
         **kwargs,
     ) -> Float[Array, "state_dim"]:
-        # mean = jnp.array([
-        #     1.021339954388544,
-        #     -0.000000045869005,
-        #     -0.181619950369762,
-        #     0.000000617839352,
-        #     -0.101759879771430,
-        #     0.000001049698173]
-        # )
-        mean = jnp.array([-0.45693046, -0.86889969, -0.45956069,
-                          0.68220284, -0.48569515, -0.23824544])
-        cov = 1.0e-08 * jnp.array([
-            [0.067741479217036,  -0.000029214433641,   0.000292500436172,   0.000343197998120,  -0.000801894296500,  -0.000076851751508],
-            [-0.000029214433641,   0.067949657828148,  -0.000045655889447,   0.000112485276059,   0.002893878948354,  -0.000038999497288],
-            [0.000292500436172,  -0.000045655889447,   0.067754170807105,  -0.000931574297640,   0.000434803811832,   0.000042975146838],
-            [0.000343197998120,   0.000112485276059,  -0.000931574297640,   0.950650788374193,   0.004879599683572,   0.000839738344685],
-            [-0.000801894296500,   0.002893878948354,   0.000434803811832,   0.004879599683572,   0.955575624017479,  -0.002913896437441],
-            [-0.000076851751508,  -0.000038999497288,   0.000042975146838,   0.000839738344685,  -0.002913896437441,   0.954675354567578]])
-        
-        noise = (
-            0
-            if key is None
-            else jax.random.multivariate_normal(
-                key, mean=jnp.zeros(self.dimension), cov=cov,
-            )
-        )
-
-        return mean + noise
+        if key is None:
+            return self.mean
+        else:
+            return jax.random.multivariate_normal(key, mean=self.mean, cov=self.covariance)
 
 
     @jaxtyped(typechecker=typechecker)
