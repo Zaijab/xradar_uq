@@ -24,6 +24,7 @@ dependencies = [
     "scikit-image",
     "scikit-learn",
     "ott-jax",
+    "polytopax",
 ]
 
 [project.optional-dependencies]

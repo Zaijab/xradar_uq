@@ -20,7 +20,7 @@ def tracking_scan_step(
     dynamical_system: CR3BP,
     measurement_system: AbstractMeasurementSystem,
     stochastic_filter: EnGMF,
-    tracking_fn: Callable[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""]], Bool[Array, ""]],
+    tracking_fn: Callable[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""], Float[Array, "batch_size state_dim"]], Bool[Array, ""]],
     time_range: float,
     delta_v_magnitude: float | Float[Array, ""],
     maneuver_proportion: float | Float[Array, ""],
@@ -48,7 +48,7 @@ def tracking_scan_step(
     
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
     
-    is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key)
+    is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble)
     
     posterior_ensemble_next = jnp.where(
         is_measurable,

@@ -26,4 +26,5 @@ from xradar_uq.measurement_systems.tracking import (
     single_sensor_tracking as single_sensor_tracking,
     dual_sensor_tracking_optimal as dual_sensor_tracking_optimal,
     dual_sensor_tracking_random as dual_sensor_tracking_random,
+    simulate_thrust as simulate_thrust
 )
