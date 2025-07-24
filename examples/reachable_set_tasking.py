@@ -28,11 +28,10 @@ key, subkey = jax.random.split(key)
 simulated_ensemble = simulate_thrust(subkey, posterior_ensemble, num_particles, delta_v_magnitude)
 simulated_trajectories = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, simulated_ensemble)
 gmm = silverman_kde_estimate(simulated_trajectories)
+
+angles = AnglesOnly()
 ensemble_angles = eqx.filter_vmap(angles)(simulated_trajectories)
-
 my_hull = angular_convex_hull(ensemble_angles)
-
-
 
 from xradar_uq.statistics.silverman_kde import GMM
 

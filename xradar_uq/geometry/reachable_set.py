@@ -7,17 +7,35 @@ This file contains two main functions:
 
 """
 import equinox as eqx
-from xradar_uq.measurement_systems import simulate_thrust
+import jax
+import jax.numpy as jnp
+import numpy as np
 import polytopax as ptx
+from beartype import beartype as typechecker
+from jaxtyping import Array, Float, jaxtyped
+from xradar_uq.dynamical_systems import CR3BP
+from xradar_uq.measurement_systems import AnglesOnly, simulate_thrust
 
-@jax.jit
-def state_reachable_set(key, state, time_horrizon, thrust, num_simulations):
-    simulated_ensemble = simulate_thrust(subkey, posterior_ensemble, num_particles, delta_v_magnitude)
-    simulated_trajectories = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, simulated_ensemble)
-    return ptx.ConvexHull.from_points(simulated_trajectories)
 
-angles = AnglesOnly()
-@jax.jit
+class ZConvexHull(eqx.Module, ptx.ConvexHull):
+    pass
+
+
+@eqx.filter_jit
+@jaxtyped(typechecker=typechecker)
+def state_reachable_set(
+    thrust_key: jax.Array, 
+    initial_state: Float[Array, "6"], 
+    time_horizon: float, 
+    delta_v_magnitude: float, 
+    num_simulations: int, 
+    dynamical_system
+):
+    thrust_ensemble = simulate_thrust(thrust_key, initial_state, num_simulations, delta_v_magnitude)
+    final_states = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horizon, thrust_ensemble)
+    return final_states
+
+@eqx.filter_jit
 def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"]) -> Float[Array, "n_hull_vertices 2"]:
     azimuth_range = jnp.max(ensemble_angles[:, 0]) - jnp.min(ensemble_angles[:, 0])
     
@@ -29,7 +47,7 @@ def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"]) -> Float[A
                                ensemble_angles[:, 0])
     points_2d = jnp.column_stack([wrapped_angles, ensemble_angles[:, 1]])
 
-    return ptx.ConvexHull.from_points(points_2d)
+    return ZConvexHull.from_points(points_2d)
 
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
@@ -46,11 +64,9 @@ def fan_triangulate(hull: ptx.ConvexHull) -> Float[Array, "n_triangles 3 2"]:
     
     return triangles
 
-# triangles = fan_triangulate(my_hull)
-
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
-def subdivide_triangles(triangles: Float[Array, "n_triangles 3 2"]) -> Float[Array, "4*n_triangles 3 2"]:
+def barycentric_subdivision(triangles: Float[Array, "n_triangles 3 2"]) -> Float[Array, "4*n_triangles 3 2"]:
     n_triangles = triangles.shape[0]
     
     # Extract vertices A, B, C for all triangles
@@ -87,5 +103,3 @@ def subdivide_triangles(triangles: Float[Array, "n_triangles 3 2"]) -> Float[Arr
     new_triangles = new_triangles.at[:, 3, 2, :].set(M_AC)
     
     return new_triangles.reshape(4 * n_triangles, 3, 2)
-
-# more_triangles = subdivide_triangles(triangles)
