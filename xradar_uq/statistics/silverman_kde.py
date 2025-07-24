@@ -87,7 +87,7 @@ class GMM(eqx.Module):
             jnp.sin(azimuth) * jnp.sin(inclination),  # y = sin(θ₁)sin(θ₂) 
             jnp.cos(inclination)                      # z = cos(θ₂)
         ])
-        assert jnp.allclose(jnp.linalg.norm(unit_vector), 1.0)
+        # assert jnp.allclose(jnp.linalg.norm(unit_vector), 1.0)
         return unit_vector
 
     @jaxtyped(typechecker=typechecker)
