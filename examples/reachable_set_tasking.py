@@ -1,20 +1,23 @@
+from typing import Callable
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 import polytopax as ptx
 from beartype import beartype as typechecker
-from jaxtyping import Array, Float, jaxtyped
+from jaxtyping import Array, Bool, Float, jaxtyped
 from xradar_uq.dynamical_systems import CR3BP
-from xradar_uq.measurement_systems import (AnglesOnly, DeepSpaceNetwork,
-                                           simulate_thrust)
-from xradar_uq.stochastic_filters import EnGMF
+from xradar_uq.geometry import (angular_reachable_set, barycentric_subdivision,
+                                fan_triangulate)
+from xradar_uq.measurement_systems import AnglesOnly, DeepSpaceNetwork
 from xradar_uq.statistics import silverman_kde_estimate
-
 from xradar_uq.statistics.silverman_kde import GMM
-from typing import Callable
+from xradar_uq.stochastic_filters import EnGMF
 
 dynamical_system = CR3BP()
+true_state = dynamical_system.initial_state()
+
 stochastic_filter = EnGMF()
 measurement_system = DeepSpaceNetwork()
 angles = AnglesOnly()
@@ -24,11 +27,14 @@ key, subkey = jax.random.split(key)
 posterior_ensemble = dynamical_system.generate(subkey)
 
 delta_v_magnitude = 2.0
-time_range = 0.242
+time_range = 10*0.242
 num_particles = 100
+
+gmm = silverman_kde_estimate(posterior_ensemble)
 
 # Ensemble -> Reachable Set (Conv Hull) -> Triangulation -> Barycentric Subdivision
 # Barycentric Subdivision -> Candidate Points
+
 
 
 # @jaxtyped(typechecker=typechecker)
@@ -38,7 +44,7 @@ def generate_triangulated_candidates(
 ) -> Float[Array, "n_candidates 2"]:
     triangles = fan_triangulate(convex_hull)
     for _ in range(subdivision_depth):
-        triangles = subdivide_triangles(triangles)
+        triangles = barycentric_subdivision(triangles)
     centroids = jnp.mean(triangles, axis=1)
     assert centroids.shape[1] == 2
     return centroids
@@ -66,12 +72,14 @@ def select_pdf_weighted_candidate(
 
 
 # Random placement
-candidates = generate_triangulated_candidates(my_hull, subdivision_depth=3)
+hull = angular_reachable_set(subkey, posterior_ensemble, time_range, delta_v_magnitude, num_particles, dynamical_system)
+candidates = generate_triangulated_candidates(hull, subdivision_depth=3)
+from typing import Callable
+
 from jax.tree_util import Partial
 
 # @jaxtyped(typechecker=typechecker)
 
-from typing import Callable
 
 @eqx.filter_jit
 def place_sensors(
@@ -105,10 +113,10 @@ def place_sensors(
     return final_positions
 
 gmm_pdf_selection = Partial(select_pdf_weighted_candidate, gmm=gmm)
-place_sensors(key, candidates, 3, jnp.deg2rad(5), gmm_pdf_selection)
+# place_sensors(key, candidates, 3, jnp.deg2rad(5), gmm_pdf_selection)
 
-random_selection = Partial(select_random_candidate)
-place_sensors(key, candidates, 3, jnp.deg2rad(5), random_selection)
+# random_selection = Partial(select_random_candidate)
+# place_sensors(key, candidates, 3, jnp.deg2rad(5), random_selection)
 
 # Todo:
 # Plot Hull + Sensor Locations + Color associated with 2D GMM PDF
@@ -119,3 +127,34 @@ place_sensors(key, candidates, 3, jnp.deg2rad(5), random_selection)
 # Plot multiple frontiers
 # Make measurement frequency plot: How many measurements for 90%> Tracking
 # 
+
+@jaxtyped(typechecker=typechecker)
+@eqx.filter_jit
+def test_sensor_exclusion(
+    sensor_positions: Float[Array, "n_sensors 2"],
+    exclusion_radius: float | Float[Array, ""]
+) -> Bool[Array, ""]:
+    n_sensors = sensor_positions.shape[0]
+    pairwise_distances = jnp.max(jnp.abs(
+        sensor_positions[:, None, :] - sensor_positions[None, :, :]
+    ), axis=2)
+    
+    upper_triangular_mask = jnp.triu(jnp.ones((n_sensors, n_sensors)), k=1)
+    masked_distances = jnp.where(upper_triangular_mask, pairwise_distances, jnp.inf)
+    min_separation = jnp.min(masked_distances)
+    
+    assert min_separation.shape == ()
+    return min_separation <= exclusion_radius
+
+# sensor_positions = jnp.array([[0.10110731, 0.34845498], [0., 0.], [0., 0.]])
+# exclusion_radius = jnp.deg2rad(5)
+# test_sensor_exclusion(sensor_positions, exclusion_radius)
+
+def sensor_tracking(true_state, prior_ensemble, key, posterior_ensemble):
+    true_angles = AnglesOnly()(true_state)
+    sensor_placement = place_sensors(key, candidates, 3, jnp.deg2rad(5), gmm_pdf_selection)
+    print(sensor_placement)
+    distances = jnp.linalg.norm(sensor_placement - true_angles[None, :], axis=1)
+    return jnp.any(distances <= jnp.deg2rad(5))
+
+sensor_tracking(true_state, posterior_ensemble, subkey, posterior_ensemble)
