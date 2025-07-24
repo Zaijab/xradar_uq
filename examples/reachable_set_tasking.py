@@ -2,14 +2,13 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
+import polytopax as ptx
 from beartype import beartype as typechecker
 from jaxtyping import Array, Float, jaxtyped
-from scipy.spatial import ConvexHull
-
 from xradar_uq.dynamical_systems import CR3BP
-from xradar_uq.measurement_systems import DeepSpaceNetwork, simulate_thrust, AnglesOnly
+from xradar_uq.measurement_systems import (AnglesOnly, DeepSpaceNetwork,
+                                           simulate_thrust)
 from xradar_uq.stochastic_filters import EnGMF
-from xradar_uq.statistics import silverman_kde_estimate
 
 dynamical_system = CR3BP()
 stochastic_filter = EnGMF()
@@ -19,7 +18,6 @@ angles = AnglesOnly()
 key = jax.random.key(42)
 key, subkey = jax.random.split(key)
 posterior_ensemble = dynamical_system.generate(subkey)
-print(posterior_ensemble.shape)
 
 delta_v_magnitude = 2.0
 
@@ -32,10 +30,7 @@ simulated_ensemble.shape
 
 ensemble_angles = eqx.filter_vmap(angles)(simulated_trajectories)
 
-import polytopax as ptx
 
-print(ensemble_angles.shape)
-# @jaxtyped(typechecker=typechecker)
 @jax.jit
 def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"]) -> Float[Array, "n_hull_vertices 2"]:
     azimuth_range = jnp.max(ensemble_angles[:, 0]) - jnp.min(ensemble_angles[:, 0])
@@ -123,3 +118,46 @@ more_triangles = subdivide_triangles(triangles)
 # Task randomly
 # 
 
+
+@jaxtyped(typechecker=typechecker)
+@eqx.filter_jit
+def place_non_overlapping_sensors(
+    key: jax.Array,
+    convex_hull_vertices: Float[Array, "n_vertices 2"],
+    n_sensors: int,
+    sensor_half_width: float = 2.5,
+) -> Float[Array, "n_sensors 2"]:
+    exclusion_radius = 2 * sensor_half_width
+    hull_center = jnp.mean(convex_hull_vertices, axis=0)
+    max_hull_radius = jnp.max(jnp.linalg.norm(convex_hull_vertices - hull_center, axis=1))
+    
+    sensor_positions = jnp.zeros((n_sensors, 2))
+    placement_mask = jnp.zeros(n_sensors, dtype=bool)
+    
+    def place_single_sensor(i, carry):
+        positions, mask, key = carry
+        key, subkey = jax.random.split(key)
+        
+        candidates = hull_center[None, :] + jax.random.uniform(
+            subkey, (1000, 2), minval=-max_hull_radius, maxval=max_hull_radius
+        )
+        
+        distances = jnp.linalg.norm(candidates[:, None, :] - positions[None, :, :], axis=2)
+        valid_position_distances = jnp.where(mask[None, :], distances, jnp.inf)
+        min_distances = jnp.min(valid_position_distances, axis=1)
+        valid_mask = min_distances > exclusion_radius
+        first_valid_idx = jnp.argmax(valid_mask)
+        new_position = candidates[first_valid_idx]
+        
+        updated_positions = positions.at[i].set(new_position)
+        updated_mask = mask.at[i].set(True)
+        return (updated_positions, updated_mask, key)
+    
+    initial_carry = (sensor_positions, placement_mask, key)
+    final_positions, _, _ = jax.lax.fori_loop(0, n_sensors, place_single_sensor, initial_carry)
+    
+    assert final_positions.shape == (n_sensors, 2)
+    return final_positions
+
+key, subkey = jax.random.split(key)
+place_non_overlapping_sensors(subkey, my_hull.vertices, 3)
