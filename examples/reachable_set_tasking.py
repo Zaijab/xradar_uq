@@ -11,31 +11,25 @@ from xradar_uq.measurement_systems import (AnglesOnly, DeepSpaceNetwork,
 from xradar_uq.stochastic_filters import EnGMF
 from xradar_uq.statistics import silverman_kde_estimate
 
-key = jax.random.key(42)
+from xradar_uq.statistics.silverman_kde import GMM
+from typing import Callable
+
 dynamical_system = CR3BP()
 stochastic_filter = EnGMF()
 measurement_system = DeepSpaceNetwork()
-true_state = dynamical_system.initial_state()
+angles = AnglesOnly()
+
+key = jax.random.key(42)
 key, subkey = jax.random.split(key)
 posterior_ensemble = dynamical_system.generate(subkey)
-
 
 delta_v_magnitude = 2.0
 time_range = 0.242
 num_particles = 100
 
-key, subkey = jax.random.split(key)
-simulated_ensemble = simulate_thrust(subkey, posterior_ensemble, num_particles, delta_v_magnitude)
-simulated_trajectories = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, simulated_ensemble)
-gmm = silverman_kde_estimate(simulated_trajectories)
+# Ensemble -> Reachable Set (Conv Hull) -> Triangulation -> Barycentric Subdivision
+# Barycentric Subdivision -> Candidate Points
 
-angles = AnglesOnly()
-ensemble_angles = eqx.filter_vmap(angles)(simulated_trajectories)
-my_hull = angular_convex_hull(ensemble_angles)
-
-from xradar_uq.statistics.silverman_kde import GMM
-
-from typing import Callable
 
 # @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
@@ -79,6 +73,36 @@ from jax.tree_util import Partial
 
 from typing import Callable
 
+@eqx.filter_jit
+def place_sensors(
+    key: jax.Array, candidates: Float[Array, "n_candidates 2"],
+    n_sensors: int, exclusion_radius: float, selection: Callable
+) -> Float[Array, "n_sensors 2"]:
+    sensor_positions = jnp.zeros((n_sensors, 2))
+    placement_mask = jnp.zeros(n_sensors, dtype=bool)
+    
+    def place_single_sensor(i, carry):
+        positions, mask, key_state = carry
+        key_state, subkey = jax.random.split(key_state)
+        
+        distances = jnp.linalg.norm(candidates[:, None] - positions[None], axis=2)
+        valid_distances = jnp.where(mask[None, :], distances, jnp.inf)
+        min_distances = jnp.min(valid_distances, axis=1)
+        valid_candidate_mask = min_distances > exclusion_radius
+        
+        valid_candidates = jnp.where(valid_candidate_mask[:, None], candidates, jnp.inf)
+        finite_mask = jnp.isfinite(valid_candidates).all(axis=1)
+        filtered_candidates = jnp.where(finite_mask[:, None], valid_candidates, 0.0)
+        
+        new_position = selection(subkey, filtered_candidates)
+        updated_positions = positions.at[i].set(new_position)
+        updated_mask = mask.at[i].set(True)
+        
+        return (updated_positions, updated_mask, key_state)
+    
+    final_positions, _, _ = jax.lax.fori_loop(0, n_sensors, place_single_sensor, (sensor_positions, placement_mask, key))
+    assert final_positions.shape == (n_sensors, 2)
+    return final_positions
 
 gmm_pdf_selection = Partial(select_pdf_weighted_candidate, gmm=gmm)
 place_sensors(key, candidates, 3, jnp.deg2rad(5), gmm_pdf_selection)
@@ -88,14 +112,10 @@ place_sensors(key, candidates, 3, jnp.deg2rad(5), random_selection)
 
 # Todo:
 # Plot Hull + Sensor Locations + Color associated with 2D GMM PDF
-# Plot the convex hull of azimuth elevation
 # Plot the triangulation
-
 # Explain Barycentric subdivision, arbitrarily small mesh size
 # Flesh out paper with plots to fill in the blank
-
 # Run Different Tasking Algorithm on DRO-A
-
 # Plot multiple frontiers
 # Make measurement frequency plot: How many measurements for 90%> Tracking
-# Use convex hull in 6D to augment EnGMF
+# 

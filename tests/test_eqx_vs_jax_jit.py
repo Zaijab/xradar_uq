@@ -19,4 +19,4 @@ def h():
     return ZConvexHull.from_points(jnp.arange(12).reshape(4,3))
 
 
-h().vertices
+h().centroid()

@@ -20,20 +20,24 @@ from xradar_uq.measurement_systems import AnglesOnly, simulate_thrust
 class ZConvexHull(eqx.Module, ptx.ConvexHull):
     pass
 
+@eqx.filter_jit
+def reachable_set(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system):
+    thrust_ensemble = simulate_thrust(thrust_key, ensemble, num_simulations, delta_v_magnitude)
+    thrust_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, thrust_ensemble)
+    hull = ZConvexHull.from_points(thrust_ensemble)
+    return hull
 
 @eqx.filter_jit
-@jaxtyped(typechecker=typechecker)
-def state_reachable_set(
-    thrust_key: jax.Array, 
-    initial_state: Float[Array, "6"], 
-    time_horizon: float, 
-    delta_v_magnitude: float, 
-    num_simulations: int, 
-    dynamical_system
-):
-    thrust_ensemble = simulate_thrust(thrust_key, initial_state, num_simulations, delta_v_magnitude)
-    final_states = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horizon, thrust_ensemble)
-    return final_states
+def angular_reachable_set(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system):
+    thrust_ensemble = simulate_thrust(thrust_key, ensemble, num_simulations, delta_v_magnitude)
+    thrust_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, thrust_ensemble)
+
+    angles = AnglesOnly()
+    ensemble_angles = eqx.filter_vmap(angles)(thrust_ensemble)
+    angle_hull = angular_convex_hull(ensemble_angles)
+    
+    return angle_hull
+
 
 @eqx.filter_jit
 def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"]) -> Float[Array, "n_hull_vertices 2"]:
@@ -53,7 +57,7 @@ def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"]) -> Float[A
 @eqx.filter_jit
 def fan_triangulate(hull: ptx.ConvexHull) -> Float[Array, "n_triangles 3 2"]:
     hull_vertices = hull.vertices_array()
-    centroid = hull.centroid()
+    centroid = jnp.mean(hull_vertices, axis=-2) #hull.centroid()
     n_vertices = hull_vertices.shape[0]
     
     # Create triangles: (centroid, vertex_i, vertex_{i+1})
@@ -63,6 +67,7 @@ def fan_triangulate(hull: ptx.ConvexHull) -> Float[Array, "n_triangles 3 2"]:
     triangles = triangles.at[:, 2, :].set(jnp.roll(hull_vertices, -1, axis=0))  # Next vertex
     
     return triangles
+
 
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
