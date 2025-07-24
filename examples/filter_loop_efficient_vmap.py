@@ -15,8 +15,8 @@ from xradar_uq.stochastic_filters import EnGMF
 
 key = jax.random.key(42)
 
-delta_v_range = jnp.linspace(0.001, 0.5, 20)
-maneuver_proportion_range = jnp.linspace(0.0, 1.0, 10)
+delta_v_range = jnp.linspace(0.001, 0.5, 20) # 0.5
+maneuver_proportion_range = jnp.linspace(0.0, 1.0, 10) # 0.5
 
 dynamical_system = CR3BP()
 measurement_system = DeepSpaceNetwork()
