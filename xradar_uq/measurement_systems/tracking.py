@@ -62,7 +62,7 @@ def simulate_thrust(
     key: Key[Array, ""],
     posterior_ensemble: Float[Array, "ensemble_size state_dim"], 
     num_particles: int,
-    delta_v_magnitude: float,
+    delta_v_magnitude: float | Float[Array, ""],
 ) -> Float[Array, "ensemble_size*{num_particles} state_dim"]:
     ensemble_size, state_dim = posterior_ensemble.shape
     keys = jax.random.split(key, ensemble_size * num_particles)
