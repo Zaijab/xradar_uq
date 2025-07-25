@@ -24,10 +24,10 @@ def csv_to_heatmap(path):
     heatmap_data = df.groupby(['dv_rounded', 'mp_rounded'])['times_found'].mean().round(3).unstack()
     return heatmap_data
 
-heatmap_1 = csv_to_heatmap('cache/times_found_random_sensor_dsn.csv')
-heatmap_2 = csv_to_heatmap('cache/times_found_pdf_sensor.csv')
+# heatmap_1 = csv_to_heatmap('cache/times_found_random_sensor_dsn.csv')
+# heatmap_2 = csv_to_heatmap('cache/times_found_pdf_sensor.csv')
 
-heatmap_data = heatmap_2 - heatmap_1
+heatmap_data = csv_to_heatmap('cache/frontier/mc_1_pdf.csv')
 
 # Create heatmap
 plt.figure(figsize=(12, 8))
@@ -42,7 +42,7 @@ plt.xlabel('Maneuver Proportion (%)')
 plt.ylabel('ΔV Magnitude (km/s)') 
 plt.title('Detection Rate Heatmap: ΔV Magnitude vs Maneuver Proportion') 
 plt.tight_layout()
-plt.savefig('figures/maneuver_detection/detection_heatmap_random_pdf_difference.png', dpi=300, bbox_inches='tight')
+plt.savefig('figures/maneuver_detection/detection_heatmap_mc_1_random.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 print(f"Heatmap saved. Data shape: {heatmap_data.shape}")
