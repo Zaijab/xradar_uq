@@ -1,49 +1,27 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
+import matplotlib.pyplot as plt
 import os
 
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-import os
+os.makedirs('figures/frontier_analysis', exist_ok=True)
+filename = 'mc_1_random_with_prop_prior'
+df = pd.read_csv(f'cache/frontier/new/{filename}.csv', index_col=0) #pd.read_csv('cache/frontier/mc_1_pdf.csv', index_col=0) - pd.read_csv('cache/frontier/mc_1_random.csv', index_col=0)
+assert df.shape == (20, 10)
 
-os.makedirs('figures/maneuver_detection', exist_ok=True)
+du_tu_to_km_s_conversion = 389703 / 382981
+row_indices_km_s = df.index * du_tu_to_km_s_conversion
+column_labels_percentage = [f'{float(col)*100:.1f}%' for col in df.columns]
 
-def csv_to_heatmap(path):
-    df = pd.read_csv(path)
+df_converted = df.copy()
+df_converted.index = row_indices_km_s.round(3)
 
-    # Convert delta_v from DU/TU to km/s, keep maneuver_proportion as original
-    df['dv_km_s'] = (389703 / 382981) * df['delta_v_magnitude']
-    df['dv_rounded'] = df['dv_km_s'].round(3)
-    df['mp_rounded'] = df['maneuver_proportion'].round(3)
-
-    # Create pivot table for heatmap
-    heatmap_data = df.groupby(['dv_rounded', 'mp_rounded'])['times_found'].mean().round(3).unstack()
-    return heatmap_data
-
-# heatmap_1 = csv_to_heatmap('cache/times_found_random_sensor_dsn.csv')
-# heatmap_2 = csv_to_heatmap('cache/times_found_pdf_sensor.csv')
-
-heatmap_data = csv_to_heatmap('cache/frontier/mc_1_pdf.csv')
-
-# Create heatmap
 plt.figure(figsize=(12, 8))
-heatmap = sns.heatmap(heatmap_data, annot=True, cmap='RdYlBu', center=0.5, 
+heatmap = sns.heatmap(df_converted, annot=True, cmap='RdYlBu', center=0.5, 
                       cbar_kws={'label': 'Detection Rate'}, fmt='.3f')
-
-# Convert x-axis labels to percentages
-x_labels = [f'{float(label.get_text())*100:.1f}%' for label in heatmap.get_xticklabels()]
-heatmap.set_xticklabels(x_labels)
+heatmap.set_xticklabels(column_labels_percentage)
 
 plt.xlabel('Maneuver Proportion (%)')
-plt.ylabel('ΔV Magnitude (km/s)') 
-plt.title('Detection Rate Heatmap: ΔV Magnitude vs Maneuver Proportion') 
+plt.ylabel('ΔV Magnitude (km/s)')
+plt.title('Detection Rate: ΔV Magnitude vs Maneuver Proportion')
 plt.tight_layout()
-plt.savefig('figures/maneuver_detection/detection_heatmap_mc_1_random.png', dpi=300, bbox_inches='tight')
-plt.show()
-
-print(f"Heatmap saved. Data shape: {heatmap_data.shape}")
-print(f"Detection range: {heatmap_data.min().min():.3f} to {heatmap_data.max().max():.3f}")
+plt.savefig(f'figures/frontier_analysis/{filename}.png', dpi=300, bbox_inches='tight')

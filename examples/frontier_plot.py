@@ -35,7 +35,7 @@ def otsu_threshold(data):
     
     return optimal_threshold
 
-detection_heatmap = pd.read_csv('cache/heatmap/10_mc_0_001_0_5_20_0_100_10.csv', index_col=0)
+# detection_heatmap = pd.read_csv('cache/heatmap/10_mc_0_001_0_5_20_0_100_10.csv', index_col=0)
 pdf_frontier_data = pd.read_csv('cache/frontier/mc_1_pdf.csv', index_col=0)
 random_frontier_data = pd.read_csv('cache/frontier/mc_1_random.csv', index_col=0)
 
