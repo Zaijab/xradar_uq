@@ -91,105 +91,6 @@ class GMM(eqx.Module):
         return unit_vector
 
     @jaxtyped(typechecker=typechecker)
-    def positional_component_logpdf(
-        self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
-    ) -> Float[Array, ""]:
-        """Single component positional normal logpdf per Wikipedia formula."""
-        unit_vector = self.spherical_angles_to_unit_vector(angles)
-        mean = self.means[component_idx, :3]
-        cov = self.covs[component_idx, :3, :3]
-        weight = self.weights[component_idx]
-
-        L = jnp.linalg.cholesky(cov)
-        sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
-        sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
-
-        numerator = jnp.dot(mean, sigma_inv_v)  # μᵀΣ⁻¹v
-        denominator = jnp.sqrt(jnp.dot(unit_vector, sigma_inv_v))  # √(vᵀΣ⁻¹v)
-        t_statistic = numerator / denominator
-
-
-        phi_t = jax.scipy.stats.norm.pdf(t_statistic)  # φ(T(θ))
-        big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)  # Φ(T(θ))
-
-        ratio_term = big_phi_t / phi_t
-        bracket_term = ratio_term + t_statistic
-        second_bracket = 1.0 + t_statistic * ratio_term
-        jax.debug.print("{}", bracket_term)
-
-        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
-        quadratic_form = jnp.dot(mean, sigma_inv_mu)  # μᵀΣ⁻¹μ
-
-        normalization = -0.5 * (3.0 * jnp.log(2.0 * jnp.pi) + log_det_sigma + quadratic_form)
-        wikipedia_factor = jnp.log(bracket_term) + jnp.log(second_bracket)
-
-        return jnp.log(weight) + normalization + wikipedia_factor
-
-    @jaxtyped(typechecker=typechecker)
-    def positional_component_logpdf(
-        self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
-    ) -> Float[Array, ""]:
-        """Single component positional normal logpdf per Wikipedia formula."""
-        unit_vector = self.spherical_angles_to_unit_vector(angles)
-        jax.debug.print("unit_vector: {}", unit_vector)
-
-        mean = self.means[component_idx, :3]
-        cov = self.covs[component_idx, :3, :3]
-        weight = self.weights[component_idx]
-
-        jax.debug.print("mean: {}", mean)
-        jax.debug.print("cov: {}", cov)
-        jax.debug.print("weight: {}", weight)
-
-        L = jnp.linalg.cholesky(cov)
-        jax.debug.print("L: {}", L)
-
-        sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
-        sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
-
-        jax.debug.print("sigma_inv_mu: {}", sigma_inv_mu)
-        jax.debug.print("sigma_inv_v: {}", sigma_inv_v)
-
-        numerator = jnp.dot(mean, sigma_inv_v)
-        denominator = jnp.sqrt(jnp.dot(unit_vector, sigma_inv_v))
-        t_statistic = numerator / denominator
-
-        jax.debug.print("numerator: {}", numerator)
-        jax.debug.print("denominator: {}", denominator)
-        jax.debug.print("t_statistic: {}", t_statistic)
-
-        phi_t = jax.scipy.stats.norm.pdf(t_statistic)
-        big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)
-
-        jax.debug.print("phi_t: {}", phi_t)
-        jax.debug.print("big_phi_t: {}", big_phi_t)
-
-        ratio_term = big_phi_t / phi_t
-        bracket_term = ratio_term + t_statistic
-        second_bracket = 1.0 + t_statistic * ratio_term
-
-        jax.debug.print("ratio_term: {}", ratio_term)
-        jax.debug.print("bracket_term: {}", bracket_term)
-        jax.debug.print("second_bracket: {}", second_bracket)
-
-        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
-        quadratic_form = jnp.dot(mean, sigma_inv_mu)
-
-        jax.debug.print("log_det_sigma: {}", log_det_sigma)
-        jax.debug.print("quadratic_form: {}", quadratic_form)
-
-        normalization = -0.5 * (3.0 * jnp.log(2.0 * jnp.pi) + log_det_sigma + quadratic_form)
-        wikipedia_factor = jnp.log(bracket_term) + jnp.log(second_bracket)
-
-        jax.debug.print("normalization: {}", normalization)
-        jax.debug.print("wikipedia_factor: {}", wikipedia_factor)
-
-        result = jnp.log(weight) + normalization + wikipedia_factor
-        jax.debug.print("final result: {}", result)
-
-        return result
-    
-    @jaxtyped(typechecker=typechecker)
     def positional_logpdf(
         self, angles: Float[Array, "2"]
     ) -> Float[Array, ""]:
@@ -227,7 +128,6 @@ class GMM(eqx.Module):
         ratio_term = big_phi_t / phi_t
         bracket_term = ratio_term + t_statistic
         second_bracket = 1.0 + t_statistic * ratio_term
-
 
         log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
         quadratic_form = jnp.dot(mean, sigma_inv_mu)

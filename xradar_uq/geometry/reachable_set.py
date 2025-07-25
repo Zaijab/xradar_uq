@@ -21,26 +21,26 @@ class ZConvexHull(eqx.Module, ptx.ConvexHull):
     pass
 
 @eqx.filter_jit
-def reachable_set(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system):
+def reachable_set(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system, n_directions=100):
     thrust_ensemble = simulate_thrust(thrust_key, ensemble, num_simulations, delta_v_magnitude)
     thrust_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, thrust_ensemble)
-    hull = ZConvexHull.from_points(thrust_ensemble)
+    hull = ZConvexHull.from_points(thrust_ensemble, n_directions=n_directions)
     return hull
 
 @eqx.filter_jit
-def angular_reachable_set(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system):
+def angular_reachable_set(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system, n_directions=100):
     thrust_ensemble = simulate_thrust(thrust_key, ensemble, num_simulations, delta_v_magnitude)
     thrust_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, thrust_ensemble)
 
     angles = AnglesOnly()
     ensemble_angles = eqx.filter_vmap(angles)(thrust_ensemble)
-    angle_hull = angular_convex_hull(ensemble_angles)
+    angle_hull = angular_convex_hull(ensemble_angles, n_directions)
     
     return angle_hull
 
 
 @eqx.filter_jit
-def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"]) -> Float[Array, "n_hull_vertices 2"]:
+def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"], n_directions=100) -> Float[Array, "n_hull_vertices 2"]:
     azimuth_range = jnp.max(ensemble_angles[:, 0]) - jnp.min(ensemble_angles[:, 0])
     
     # Handle azimuth wraparound
@@ -51,7 +51,7 @@ def angular_convex_hull(ensemble_angles: Float[Array, "n_samples 2"]) -> Float[A
                                ensemble_angles[:, 0])
     points_2d = jnp.column_stack([wrapped_angles, ensemble_angles[:, 1]])
 
-    return ZConvexHull.from_points(points_2d)
+    return ZConvexHull.from_points(points_2d, n_directions=n_directions)
 
 @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit

@@ -80,6 +80,26 @@ from jax.tree_util import Partial
 
 # @jaxtyped(typechecker=typechecker)
 
+# @jaxtyped(typechecker=typechecker) 
+@eqx.filter_jit
+def select_random_candidate(
+    key: jax.Array, candidates: Float[Array, "n_candidates 2"]
+) -> Float[Array, "2"]:
+    random_idx = jax.random.choice(key, candidates.shape[0])
+    selected_position = candidates[random_idx]
+    assert selected_position.shape == (2,)
+    return selected_position
+
+@jaxtyped(typechecker=typechecker)
+@eqx.filter_jit  
+def select_pdf_weighted_candidate(
+    key, candidates: Float[Array, "n_candidates 2"], gmm: GMM
+) -> Float[Array, "2"]:
+    pdf_weights = eqx.filter_vmap(gmm.positional_pdf)(candidates)
+    optimal_idx = jnp.argmax(pdf_weights)
+    selected_position = candidates[optimal_idx]
+    assert selected_position.shape == (2,)
+    return selected_position
 
 @eqx.filter_jit
 def place_sensors(
@@ -112,8 +132,67 @@ def place_sensors(
     assert final_positions.shape == (n_sensors, 2)
     return final_positions
 
-gmm_pdf_selection = Partial(select_pdf_weighted_candidate, gmm=gmm)
-# place_sensors(key, candidates, 3, jnp.deg2rad(5), gmm_pdf_selection)
+gmm_pdf_selection = Partial(select_pdf_weighted_candidate, gmm=kde_model)
+place_sensors(key, all_vertices, 3, jnp.deg2rad(5), gmm_pdf_selection)
+
+###
+
+@jaxtyped(typechecker=typechecker)
+@eqx.filter_jit  
+def select_pdf_weighted_candidate(
+    key, candidates: Float[Array, "n_candidates 2"], gmm: GMM
+) -> Float[Array, "2"]:
+    finite_mask = jnp.isfinite(candidates).all(axis=1)
+    
+    valid_candidates = jnp.where(finite_mask[:, None], candidates, 0.0)
+    pdf_weights = eqx.filter_vmap(gmm.positional_pdf)(valid_candidates)
+    masked_weights = jnp.where(finite_mask, pdf_weights, -jnp.inf)
+    optimal_idx = jnp.argmax(masked_weights)
+    selected_position = candidates[optimal_idx]
+    assert selected_position.shape == (2,)
+    return selected_position
+
+@eqx.filter_jit
+def place_sensors(
+    key: jax.Array, candidates: Float[Array, "n_candidates 2"],
+    n_sensors: int, exclusion_radius: float, selection: Callable
+) -> Float[Array, "n_sensors 2"]:
+    sensor_positions = jnp.zeros((n_sensors, 2))
+    placement_mask = jnp.zeros(n_sensors, dtype=bool)
+    
+    def place_single_sensor(i, carry):
+        positions, mask, key_state = carry
+        key_state, subkey = jax.random.split(key_state)
+        
+        distances = jnp.linalg.norm(candidates[:, None] - positions[None], axis=2)
+        valid_distances = jnp.where(mask[None, :], distances, jnp.inf)
+        min_distances = jnp.min(valid_distances, axis=1)
+        valid_candidate_mask = min_distances > exclusion_radius
+        
+        valid_candidates = jnp.where(valid_candidate_mask[:, None], candidates, jnp.inf)
+        new_position = selection(subkey, valid_candidates)
+        
+        updated_positions = positions.at[i].set(new_position)
+        updated_mask = mask.at[i].set(True)
+        
+        return (updated_positions, updated_mask, key_state)
+    
+    final_positions, _, _ = jax.lax.fori_loop(0, n_sensors, place_single_sensor, (sensor_positions, placement_mask, key))
+    return final_positions
+
+# Usage:
+exclusion_radius = jnp.deg2rad(5.0)
+jax.debug.print("Exclusion radius: {r}, Candidate range: x=[{xmin}, {xmax}], y=[{ymin}, {ymax}]", 
+                r=exclusion_radius, 
+                xmin=jnp.min(all_vertices[:, 0]), xmax=jnp.max(all_vertices[:, 0]),
+                ymin=jnp.min(all_vertices[:, 1]), ymax=jnp.max(all_vertices[:, 1]))
+
+gmm_pdf_selection = Partial(select_pdf_weighted_candidate, gmm=kde_model)
+sensor_positions = place_sensors(key, all_vertices, 3, exclusion_radius, gmm_pdf_selection)
+assert jnp.max(jnp.abs(sensor_positions[:, None, :] - sensor_positions[None, :, :]), axis=2) > jnp.deg2rad(5)
+
+sensor_positions
+###
 
 # random_selection = Partial(select_random_candidate)
 # place_sensors(key, candidates, 3, jnp.deg2rad(5), random_selection)
