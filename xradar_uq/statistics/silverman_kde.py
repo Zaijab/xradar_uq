@@ -117,7 +117,8 @@ class GMM(eqx.Module):
         mean = self.means[component_idx, :3]           # μ ∈ ℝ³ (mean vector)
         cov = self.covs[component_idx, :3, :3]         # Σ ∈ ℝ³ˣ³ (covariance matrix)  
         weight = self.weights[component_idx]           # mixture weight
-
+        mean = mean + jnp.array([0.012150584269940, 0.0, 0.0]) # Shifting means to be Earth centered
+        
         # Efficient computation via Cholesky decomposition: Σ = LLᵀ
         L = jnp.linalg.cholesky(cov)                   # L: lower triangular Cholesky factor
         sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)        # Σ⁻¹μ
