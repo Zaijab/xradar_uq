@@ -32,4 +32,4 @@ df = pd.DataFrame(
     index=((389703 / 382981) * delta_v_range),
     columns=maneuver_proportion_range
 )
-return df
+

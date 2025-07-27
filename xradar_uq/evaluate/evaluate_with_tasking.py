@@ -9,7 +9,7 @@ from jaxtyping import Array, Bool, Float, Int, Key, jaxtyped
 from xradar_uq.dynamical_systems import CR3BP
 from xradar_uq.measurement_systems import AbstractMeasurementSystem
 from xradar_uq.statistics import generate_random_impulse_velocity
-from xradar_uq.stochastic_filters import EnGMF
+from xradar_uq.stochastic_filters import EnGMF, AbstractFilter
 
 
 @jaxtyped(typechecker=typechecker)
@@ -19,7 +19,7 @@ def tracking_scan_step(
     key: Key[Array, ""],
     dynamical_system: CR3BP,
     measurement_system: AbstractMeasurementSystem,
-    stochastic_filter: EnGMF,
+    stochastic_filter: AbstractFilter,
     tracking_fn: Callable, #[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""], Float[Array, "batch_size state_dim"]], Bool[Array, ""]],
     time_range: float,
     delta_v_magnitude: float | Float[Array, ""],
@@ -76,7 +76,7 @@ def evaluate_tracking_single_case(
     key: Key[Array, ""],
     dynamical_system: CR3BP,
     measurement_system: AbstractMeasurementSystem,
-    stochastic_filter: EnGMF,
+    stochastic_filter: AbstractFilter,
     tracking_fn: Callable[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""]], Bool[Array, ""]],
     time_range: float = 0.242,
     measurement_time: int = 200,
@@ -112,7 +112,7 @@ def evaluate_tracking_grid(
     key: Key[Array, ""],
     dynamical_system: CR3BP,
     measurement_system: AbstractMeasurementSystem,
-    stochastic_filter: EnGMF,
+    stochastic_filter: AbstractFilter,
     tracking_fn: Callable[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""]], Bool[Array, ""]],
     mc_iterations: int = 1,
 ) -> Float[Array, "n_dv n_mp mc_iterations"]:
