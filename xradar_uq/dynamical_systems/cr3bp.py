@@ -16,8 +16,11 @@ class CR3BP(AbstractContinuousDynamicalSystem, strict=True):
     mu: float = 0.01215058560962404
 
     # Mean is likely to change to be initial points from CR3BP library
+    # mean: Float[Array, "6"] = eqx.field(
+    #     default_factory=lambda: jnp.array([0.928198691381327, 0.107788360285704, 0.341251149344347, 0.122057469025560, 0.00824091751033246, 0.312754417877696])
+    # )
     mean: Float[Array, "6"] = eqx.field(
-        default_factory=lambda: jnp.array([0.928198691381327, 0.107788360285704, 0.341251149344347, 0.122057469025560, 0.00824091751033246, 0.312754417877696])
+        default_factory=lambda: jnp.array([1.03023361221087, 0.0687372443157935, 0.147641949569388, 0.157623720622668, -0.181091773654881, 0.389575654309805])
     )
     # Covariance is from
     # Efficient Orbit Determination Using Measurement-Directional State Transition Tensor

@@ -54,7 +54,7 @@ def sample_gaussian_mixture(key: Key[Array, ""], point: Float[Array, "state_dim"
 stochastic_filter = EnGMF()
 
 true_state = dynamical_system.initial_state()
-posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0, batch_size=100)
+posterior_ensemble = dynamical_system.generate(subkey, final_time=0.0, batch_size=0)
 num_measurements = 10
 time_horrizon = 1.0
 delta_v_magnitude = 0.0
@@ -109,14 +109,14 @@ def make_hull_discriminator(points: Float[Array, "n_points state_dim"]):
         return jax.pure_callback(_hull_check, result_spec, test_point, points, vmap_method='sequential')
     return discriminator
 
-hull_discriminator = make_hull_discriminator(prior_ensemble)
-stochastic_filter = EnGMF(sampling_function=jax.tree_util.Partial(rejection_sample, discriminator=hull_discriminator))
 
 for _ in range(num_measurements):
     print(_)
     key, subkey, thrust_key = jax.random.split(key, 3)
     true_state = dynamical_system.flow(0.0, time_horrizon, true_state)
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, posterior_ensemble)
+    # hull_discriminator = make_hull_discriminator(prior_ensemble)
+    # stochastic_filter = EnGMF(sampling_function=jax.tree_util.Partial(rejection_sample, discriminator=hull_discriminator))
     posterior_ensemble = stochastic_filter.update(subkey, prior_ensemble, measurement_system(true_state), measurement_system)
     error = true_state - jnp.mean(posterior_ensemble, axis=0)
     errors.append(error)
