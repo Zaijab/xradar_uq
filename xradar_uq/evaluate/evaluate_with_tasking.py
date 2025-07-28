@@ -33,8 +33,6 @@ def tracking_scan_step(
     
     update_key, measurement_key, thrust_key, tracking_key = jax.random.split(key, 4)
     
-    true_state_next = dynamical_system.flow(0.0, time_range, true_state)
-    
     should_maneuver = jax.random.bernoulli(thrust_key, p=maneuver_proportion)
     has_fuel = total_fuel > 0
     do_maneuver = should_maneuver & has_fuel
@@ -45,7 +43,11 @@ def tracking_scan_step(
         true_state_next
     )
     total_fuel_next = jnp.where(do_maneuver, total_fuel - delta_v_magnitude, total_fuel)
+
     
+    true_state_next = dynamical_system.flow(0.0, time_range, true_state)
+    
+        
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow, in_axes=(None, None, 0))(0.0, time_range, posterior_ensemble)
     
     is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble,
@@ -66,6 +68,7 @@ def tracking_scan_step(
     
     new_carry = (posterior_ensemble_next, true_state_next, total_fuel_next, times_found_next)
     return new_carry, is_measurable
+
 
 
 # @jaxtyped(typechecker=typechecker)
