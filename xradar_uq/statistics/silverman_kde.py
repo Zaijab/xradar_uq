@@ -109,7 +109,7 @@ class GMM(eqx.Module):
         self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
     ) -> Float[Array, ""]:
         """Single component positional normal PDF per Wikipedia formula."""
-
+        angles = jnp.deg2rad(angles)
         # Convert spherical angles (azimuth, inclination) to unit vector u ∈ S²
         unit_vector = self.spherical_angles_to_unit_vector(angles)
 
