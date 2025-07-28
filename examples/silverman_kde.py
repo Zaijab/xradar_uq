@@ -2,11 +2,6 @@ import distrax
 import jax
 import jax.numpy as jnp
 
-key =  jax.random.key(0)
-key, subkey = jax.random.split(key)
-ensemble = jax.random.multivariate_normal(subkey, shape=(100,), mean=jnp.ones(6), cov=jnp.eye(6))
-
-
 @jax.jit
 def silverman_kde_estimate(means):
     n, d = means.shape[0], means.shape[1]
@@ -18,5 +13,3 @@ def silverman_kde_estimate(means):
         mixture_distribution=distrax.Categorical(probs=weights),
         components_distribution=components
     )
-
-silverman_kde_estimate(ensemble).prob(jnp.array([1,2,3,4,5,6]))

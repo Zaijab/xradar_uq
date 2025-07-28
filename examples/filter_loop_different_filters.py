@@ -263,16 +263,20 @@ def sensor_tracking_mean(true_state, prior_ensemble, key, posterior_ensemble,
 # true_state = dynamical_system.flow(0.0, 0.24, true_state)
 # sensor_tracking_max_pdf(true_state, posterior_ensemble, subkey, posterior_ensemble, dynamical_system, 0.24, 1e-5)
 
+###
+
 delta_v_range = jnp.linspace(0.001, 0.5, 2) # 0.5
 maneuver_proportion_range = jnp.linspace(0.0, 1.0, 2) # 0.5
-measurement_range = jnp.linspace(0.001, 0.5, 3)
-measurement_range = jnp.array([0.23])
+measurement_range = jnp.linspace(0.001, 3.0, 2)
+t_global_final_time = 14.0
+measurement_count = int(t_global_final_time / measurement_range[0])
+# 86400/382981 = ~0.225598658941
 
 def evaluate_single_time(time_horrizon):
     return evaluate_tracking_grid(
         delta_v_range, maneuver_proportion_range, time_horrizon, key,
         dynamical_system, measurement_system, stochastic_filter,
-        sensor_tracking_mean, mc_iterations = 1
+        sensor_tracking_mean, measurement_count, mc_iterations = 1
     )
 
 

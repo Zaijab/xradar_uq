@@ -170,10 +170,10 @@ def silverman_kde_estimate(means):
     covs = jnp.tile(silverman_beta * jnp.cov(means.T), reps=(n, 1, 1))
     return GMM(means, covs, weights)
 
-# Usage:
-# my_dist is a GMM with 10 components over 6D space.
-# We can then evaluate this GMM over a single point in 6D.
-my_dist = silverman_kde_estimate(jax.random.normal(jax.random.key(0), (10,6)))
-# my_dist.pdf(jnp.arange(6).astype(float))
-my_dist.positional_component_pdf(0, jnp.array([jnp.deg2rad(5.0), jnp.deg2rad(5.0)]))
-my_dist.positional_pdf(jnp.array([jnp.deg2rad(5.0), jnp.deg2rad(50.0)]))
+# # Usage:
+# # my_dist is a GMM with 10 components over 6D space.
+# # We can then evaluate this GMM over a single point in 6D.
+# my_dist = silverman_kde_estimate(jax.random.normal(jax.random.key(0), (10,6)))
+# # my_dist.pdf(jnp.arange(6).astype(float))
+# my_dist.positional_component_pdf(0, jnp.array([jnp.deg2rad(5.0), jnp.deg2rad(5.0)]))
+# my_dist.positional_pdf(jnp.array([jnp.deg2rad(5.0), jnp.deg2rad(50.0)]))

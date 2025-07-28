@@ -12,7 +12,15 @@ from xradar_uq.statistics import generate_random_impulse_velocity
 from xradar_uq.stochastic_filters import EnGMF, AbstractFilter
 
 
-@jaxtyped(typechecker=typechecker)
+# determine if maneuver occurs each day using bernoulli p with prop
+#    if it does, using uniform random to determine when WITHIN the day the maneuver occurs
+# store times of all maneuvers {maneuver_count x 1}, with associated random thurst vectors {maneuver_count x 3}
+#
+# check if maneuver occurs within [measurement_id * time_range, (measurement_id+1) * time_range]
+#     if maneuver occurs find local time = maneuver_global_time - (measurement_id * time_range)
+#     use that local time to break up true state dynamic flow, applying associated thrust at local tim
+
+# @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
 def tracking_scan_step(
     carry: tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
@@ -29,7 +37,9 @@ def tracking_scan_step(
     tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
     Bool[Array, ""]
 ]:
-    posterior_ensemble, true_state, total_fuel, times_found = carry
+    posterior_ensemble, true_state, total_fuel, times_found, measurement_id = carry
+    jax.debug.print('{} : {:3}', measurement_id, measurement_id * time_range)
+
     
     update_key, measurement_key, thrust_key, tracking_key = jax.random.split(key, 4)
     
@@ -39,20 +49,14 @@ def tracking_scan_step(
     
     true_state_next = jnp.where(
         do_maneuver,
-        true_state_next.at[3:].add(random_impulse_velocity),
-        true_state_next
+        true_state.at[3:].add(random_impulse_velocity),
+        true_state
     )
     total_fuel_next = jnp.where(do_maneuver, total_fuel - delta_v_magnitude, total_fuel)
-
-    
     true_state_next = dynamical_system.flow(0.0, time_range, true_state)
-    
-        
     prior_ensemble = eqx.filter_vmap(dynamical_system.flow, in_axes=(None, None, 0))(0.0, time_range, posterior_ensemble)
-    
     is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble,
                                 dynamical_system, time_range, delta_v_magnitude)
-    
     posterior_ensemble_next = jnp.where(
         is_measurable,
         stochastic_filter.update(
@@ -66,10 +70,232 @@ def tracking_scan_step(
     
     times_found_next = times_found + jnp.where(is_measurable, 1, 0)
     
-    new_carry = (posterior_ensemble_next, true_state_next, total_fuel_next, times_found_next)
+    new_carry = (posterior_ensemble_next, true_state_next, total_fuel_next, times_found_next, measurement_id + 1)
     return new_carry, is_measurable
 
+# @jaxtyped(typechecker=typechecker)
+@eqx.filter_jit
+def tracking_scan_step(
+    carry: tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
+    key: Key[Array, ""],
+    dynamical_system: CR3BP,
+    measurement_system: AbstractMeasurementSystem,
+    stochastic_filter: AbstractFilter,
+    tracking_fn: Callable,
+    time_range: float | Float[Array, ""],
+    delta_v_magnitude: float | Float[Array, ""],
+    maneuver_proportion: float | Float[Array, ""],
+    random_impulse_velocity: Float[Array, "3"],
+) -> tuple[tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]], Bool[Array, ""]]:
+    posterior_ensemble, true_state, total_fuel, times_found, measurement_id = carry
+    update_key, measurement_key, thrust_key, tracking_key = jax.random.split(key, 4)
+    
+    current_time = measurement_id * time_range
+    previous_time = (measurement_id - 1) * time_range
+    maneuver_interval = 0.23
+    first_maneuver = jnp.ceil(previous_time / maneuver_interval) * maneuver_interval
+    maneuver_times = jnp.arange(first_maneuver, current_time, maneuver_interval)
+    
+    def flow_with_maneuvers(state):
+        t_prev = previous_time
+        fuel_remaining = total_fuel
+        for t_maneuver in maneuver_times:
+            state = dynamical_system.flow(0.0, t_maneuver - t_prev, state)
+            maneuver_key = jax.random.fold_in(thrust_key, jnp.int32(t_maneuver / maneuver_interval))
+            impulse = jax.random.normal(maneuver_key, (3,)) * delta_v_magnitude
+            state = jnp.where(fuel_remaining > 0, state.at[3:].add(impulse), state)
+            fuel_remaining = jnp.where(fuel_remaining > 0, fuel_remaining - delta_v_magnitude, fuel_remaining)
+            t_prev = t_maneuver
+        return dynamical_system.flow(0.0, current_time - t_prev, state)
+    
+    true_state_next = flow_with_maneuvers(true_state)
+    prior_ensemble = eqx.filter_vmap(flow_with_maneuvers)(posterior_ensemble)
+    num_maneuvers = jnp.minimum(maneuver_times.size, jnp.floor(total_fuel / delta_v_magnitude))
+    total_fuel_next = total_fuel - num_maneuvers * delta_v_magnitude
+    
+    is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble, dynamical_system, time_range, delta_v_magnitude)
+    posterior_ensemble_next = jnp.where(is_measurable, stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state_next, measurement_key), measurement_system), prior_ensemble)
+    
 
+    return (posterior_ensemble_next, true_state_next, total_fuel_next, times_found + jnp.where(is_measurable, 1, 0), measurement_id + 1), is_measurable
+
+@eqx.filter_jit
+def tracking_scan_step(
+    carry: tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
+    key: Key[Array, ""],
+    dynamical_system: CR3BP,
+    measurement_system: AbstractMeasurementSystem,
+    stochastic_filter: AbstractFilter,
+    tracking_fn: Callable,
+    time_range: float | Float[Array, ""],
+    delta_v_magnitude: float | Float[Array, ""],
+    maneuver_proportion: float | Float[Array, ""],
+    random_impulse_velocity: Float[Array, "3"],
+) -> tuple[tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]], Bool[Array, ""]]:
+    posterior_ensemble, true_state, total_fuel, times_found, measurement_id = carry
+    update_key, measurement_key, thrust_key, tracking_key = jax.random.split(key, 4)
+    
+    current_time = measurement_id * time_range
+    previous_time = (measurement_id - 1) * time_range
+    maneuver_interval = 0.23
+    max_maneuvers_per_step = jnp.int32(jnp.ceil(time_range / maneuver_interval)) + 1
+    
+    def scan_maneuver_step(carry, _):
+        state, t_current, fuel_remaining = carry
+        next_maneuver_time = jnp.ceil(t_current / maneuver_interval) * maneuver_interval
+        should_maneuver = (next_maneuver_time < current_time) & (fuel_remaining > 0)
+        
+        time_to_flow = jnp.where(should_maneuver, next_maneuver_time - t_current, current_time - t_current)
+        state = dynamical_system.flow(0.0, time_to_flow, state)
+        
+        maneuver_key = jax.random.fold_in(thrust_key, jnp.int32(next_maneuver_time * 1000))
+        impulse = jax.random.normal(maneuver_key, (3,)) * delta_v_magnitude
+        state = jnp.where(should_maneuver, state.at[3:].add(impulse), state)
+        fuel_remaining = jnp.where(should_maneuver, fuel_remaining - delta_v_magnitude, fuel_remaining)
+        t_current = jnp.where(should_maneuver, next_maneuver_time, current_time)
+        
+        return (state, t_current, fuel_remaining), None
+    
+    def apply_scheduled_maneuvers(state):
+        initial_carry = (state, previous_time, total_fuel)
+        final_carry, _ = jax.lax.scan(scan_maneuver_step, initial_carry, None, length=max_maneuvers_per_step)
+        return final_carry[0], final_carry[2]
+    
+    true_state_next, total_fuel_next = apply_scheduled_maneuvers(true_state)
+    ensemble_and_fuel = eqx.filter_vmap(apply_scheduled_maneuvers)(posterior_ensemble)
+    prior_ensemble = ensemble_and_fuel[0]
+    
+    is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble, dynamical_system, time_range, delta_v_magnitude)
+    posterior_ensemble_next = jnp.where(is_measurable, stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state_next, measurement_key), measurement_system), prior_ensemble)
+    
+    assert true_state_next.shape == true_state.shape
+    assert posterior_ensemble_next.shape == posterior_ensemble.shape
+    return (posterior_ensemble_next, true_state_next, fuel_after_true, times_found + jnp.where(is_measurable, 1, 0), measurement_id + 1), is_measurable
+
+
+###
+
+@eqx.filter_jit
+def tracking_scan_step(
+    carry: tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
+    key: Key[Array, ""],
+    dynamical_system: CR3BP,
+    measurement_system: AbstractMeasurementSystem,
+    stochastic_filter: AbstractFilter,
+    tracking_fn: Callable,
+    time_range: float | Float[Array, ""],
+    delta_v_magnitude: float | Float[Array, ""],
+    maneuver_proportion: float | Float[Array, ""],
+    random_impulse_velocity: Float[Array, "3"],
+) -> tuple[tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]], Bool[Array, ""]]:
+    posterior_ensemble, true_state, total_fuel, times_found, measurement_id = carry
+    update_key, measurement_key, thrust_key, tracking_key = jax.random.split(key, 4)
+    
+    current_time = measurement_id * time_range
+    previous_time = (measurement_id - 1) * time_range
+    maneuver_interval = 0.23
+    max_days_per_step = 20
+    
+    def scan_day_step(day_carry, day_idx):
+        state, t_current, fuel_remaining = day_carry
+        maneuver_time = day_idx * maneuver_interval
+        should_flow_to_maneuver = (maneuver_time >= previous_time) & (maneuver_time < current_time)
+        should_apply_maneuver = should_flow_to_maneuver & (fuel_remaining > 0)
+        
+        flow_time = jnp.where(should_flow_to_maneuver, maneuver_time - t_current, 0.0)
+        state = jnp.where(should_flow_to_maneuver, dynamical_system.flow(0.0, flow_time, state), state)
+        
+        maneuver_key = jax.random.fold_in(thrust_key, day_idx)
+        impulse = jax.random.normal(maneuver_key, (3,)) * delta_v_magnitude
+        state = jnp.where(should_apply_maneuver, state.at[3:].add(impulse), state)
+        fuel_remaining = jnp.where(should_apply_maneuver, fuel_remaining - delta_v_magnitude, fuel_remaining)
+        t_current = jnp.where(should_flow_to_maneuver, maneuver_time, t_current)
+        
+        return (state, t_current, fuel_remaining), None
+    
+    def apply_scheduled_maneuvers(state):
+        initial_carry = (state, previous_time, total_fuel)
+        day_indices = jnp.arange(max_days_per_step)
+        final_carry, _ = jax.lax.scan(scan_day_step, initial_carry, day_indices)
+        final_state, final_time, final_fuel = final_carry
+        
+        remaining_flow_time = current_time - final_time
+        final_state = dynamical_system.flow(0.0, remaining_flow_time, final_state)
+        
+        return final_state, final_fuel
+    
+    true_state_next, total_fuel_next = apply_scheduled_maneuvers(true_state)
+    ensemble_and_fuel = eqx.filter_vmap(apply_scheduled_maneuvers)(posterior_ensemble)
+    prior_ensemble = ensemble_and_fuel[0]
+    
+    is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble, dynamical_system, time_range, delta_v_magnitude)
+    posterior_ensemble_next = jnp.where(is_measurable, stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state_next, measurement_key), measurement_system), prior_ensemble)
+    
+    return (posterior_ensemble_next, true_state_next, total_fuel_next, times_found + jnp.where(is_measurable, 1, 0), measurement_id + 1), is_measurable
+
+###
+
+@eqx.filter_jit
+def tracking_scan_step(
+    carry: tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]],
+    key: Key[Array, ""],
+    dynamical_system: CR3BP,
+    measurement_system: AbstractMeasurementSystem,
+    stochastic_filter: AbstractFilter,
+    tracking_fn: Callable,
+    time_range: float | Float[Array, ""],
+    delta_v_magnitude: float | Float[Array, ""],
+    maneuver_proportion: float | Float[Array, ""],
+    random_impulse_velocity: Float[Array, "3"],
+) -> tuple[tuple[Float[Array, "batch_size state_dim"], Float[Array, "state_dim"], Float[Array, ""], int | Int[Array, ""]], Bool[Array, ""]]:
+    posterior_ensemble, true_state, total_fuel, times_found, measurement_id = carry
+    update_key, measurement_key, thrust_key, tracking_key = jax.random.split(key, 4)
+    
+    current_time = measurement_id * time_range
+    previous_time = (measurement_id - 1) * time_range
+    maneuver_interval = 0.23
+    max_days_per_step = 20
+    
+    def scan_day_step(day_carry, day_idx):
+        state, t_current, fuel_remaining = day_carry
+        maneuver_time = day_idx * maneuver_interval
+        should_flow_to_maneuver = (maneuver_time >= previous_time) & (maneuver_time < current_time)
+        should_apply_maneuver = should_flow_to_maneuver & (fuel_remaining > 0)
+        
+        flow_time = jnp.where(should_flow_to_maneuver, maneuver_time - t_current, 0.0)
+        state = jnp.where(should_flow_to_maneuver, dynamical_system.flow(0.0, flow_time, state), state)
+        
+        maneuver_key = jax.random.fold_in(thrust_key, day_idx)
+        impulse = jax.random.normal(maneuver_key, (3,)) * delta_v_magnitude
+        state = jnp.where(should_apply_maneuver, state.at[3:].add(impulse), state)
+        fuel_remaining = jnp.where(should_apply_maneuver, fuel_remaining - delta_v_magnitude, fuel_remaining)
+        t_current = jnp.where(should_flow_to_maneuver, maneuver_time, t_current)
+        
+        return (state, t_current, fuel_remaining), None
+    
+    def apply_scheduled_maneuvers_true_state(state):
+        initial_carry = (state, previous_time, total_fuel)
+        day_indices = jnp.arange(max_days_per_step)
+        final_carry, _ = jax.lax.scan(scan_day_step, initial_carry, day_indices)
+        final_state, final_time, final_fuel = final_carry
+        
+        remaining_flow_time = current_time - final_time
+        final_state = dynamical_system.flow(0.0, remaining_flow_time, final_state)
+        
+        return final_state, final_fuel
+    
+    def flow_ensemble_no_maneuvers(state):
+        return dynamical_system.flow(0.0, time_range, state)
+    
+    true_state_next, total_fuel_next = apply_scheduled_maneuvers_true_state(true_state)
+    prior_ensemble = eqx.filter_vmap(flow_ensemble_no_maneuvers)(posterior_ensemble)
+    
+    is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble, dynamical_system, time_range, delta_v_magnitude)
+    posterior_ensemble_next = jnp.where(is_measurable, stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state_next, measurement_key), measurement_system), prior_ensemble)
+    
+    return (posterior_ensemble_next, true_state_next, total_fuel_next, times_found + jnp.where(is_measurable, 1, 0), measurement_id + 1), is_measurable
+
+###
 
 # @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
@@ -92,7 +318,7 @@ def evaluate_tracking_single_case(
     random_impulse_velocity = generate_random_impulse_velocity(impulse_key, delta_v_magnitude)
     
     measurement_keys = jax.random.split(key, measurement_time)
-    initial_carry = (posterior_ensemble, true_state, initial_fuel, 0)
+    initial_carry = (posterior_ensemble, true_state, initial_fuel, 0, 0)
     
     def scan_fn(carry, key):
         return tracking_scan_step(
@@ -101,7 +327,7 @@ def evaluate_tracking_single_case(
         )
     
     final_carry, _ = jax.lax.scan(scan_fn, initial_carry, measurement_keys)
-    _, _, _, times_found = final_carry
+    _, _, _, times_found, _ = final_carry
     
     found_proportion = times_found / measurement_time
     return found_proportion
@@ -118,6 +344,7 @@ def evaluate_tracking_grid(
     measurement_system: AbstractMeasurementSystem,
     stochastic_filter: AbstractFilter,
     tracking_fn: Callable[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""]], Bool[Array, ""]],
+    measurement_count,
     mc_iterations: int = 1,
 ) -> Float[Array, "n_dv n_mp mc_iterations"]:
     n_dv, n_mp = len(delta_v_range), len(maneuver_proportion_range)
@@ -133,7 +360,7 @@ def evaluate_tracking_grid(
             def evaluate_mp(mp_key, mp_val):
                 return evaluate_tracking_single_case(
                     dv_val, mp_val, mp_key,
-                    dynamical_system, measurement_system, stochastic_filter, tracking_fn, time_horrizon
+                    dynamical_system, measurement_system, stochastic_filter, tracking_fn, time_horrizon, measurement_time=measurement_count
                 )
             
             return eqx.filter_vmap(evaluate_mp)(mp_keys, maneuver_proportion_range)
