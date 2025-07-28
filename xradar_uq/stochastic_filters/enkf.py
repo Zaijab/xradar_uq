@@ -13,6 +13,7 @@ from xradar_uq.measurement_systems import AbstractMeasurementSystem
 class EnKF(AbstractFilter, strict=True):
     inflation_factor: float = 1.01
     debug: bool = False
+    ensemble_size: int = 50
 
     @jaxtyped(typechecker=typechecker)
     @eqx.filter_jit
