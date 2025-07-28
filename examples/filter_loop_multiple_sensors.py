@@ -112,6 +112,7 @@ def sensor_tracking_max_pdf(true_state, prior_ensemble, key, posterior_ensemble,
 
 # sensor_tracking_max_pdf(true_state, posterior_ensemble, subkey, posterior_ensemble, dynamical_system, 0.24, 1e-5)
 
+stochastic_filter = UKF()
 
 results_single = evaluate_tracking_grid(
     delta_v_range, maneuver_proportion_range, key,

@@ -21,7 +21,7 @@ def tracking_scan_step(
     measurement_system: AbstractMeasurementSystem,
     stochastic_filter: AbstractFilter,
     tracking_fn: Callable, #[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""], Float[Array, "batch_size state_dim"]], Bool[Array, ""]],
-    time_range: float,
+    time_range: float | Float[Array, ""],
     delta_v_magnitude: float | Float[Array, ""],
     maneuver_proportion: float | Float[Array, ""],
     random_impulse_velocity: Float[Array, "3"],
@@ -46,7 +46,7 @@ def tracking_scan_step(
     )
     total_fuel_next = jnp.where(do_maneuver, total_fuel - delta_v_magnitude, total_fuel)
     
-    prior_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_range, posterior_ensemble)
+    prior_ensemble = eqx.filter_vmap(dynamical_system.flow, in_axes=(None, None, 0))(0.0, time_range, posterior_ensemble)
     
     is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble,
                                 dynamical_system, time_range, delta_v_magnitude)
@@ -78,14 +78,14 @@ def evaluate_tracking_single_case(
     measurement_system: AbstractMeasurementSystem,
     stochastic_filter: AbstractFilter,
     tracking_fn: Callable[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""]], Bool[Array, ""]],
-    time_range: float = 0.242,
+    time_range: float | Float[Array, ""] = 0.242,
     measurement_time: int = 200,
     initial_fuel: float = 1.0,
 ) -> Float[Array, ""]:
     key, state_key, impulse_key = jax.random.split(key, 3)
     
     true_state = dynamical_system.initial_state()
-    posterior_ensemble = dynamical_system.generate(state_key)
+    posterior_ensemble = dynamical_system.generate(state_key, batch_size=stochastic_filter.ensemble_size)
     random_impulse_velocity = generate_random_impulse_velocity(impulse_key, delta_v_magnitude)
     
     measurement_keys = jax.random.split(key, measurement_time)
@@ -109,6 +109,7 @@ def evaluate_tracking_single_case(
 def evaluate_tracking_grid(
     delta_v_range: Float[Array, "n_dv"],
     maneuver_proportion_range: Float[Array, "n_mp"],
+    time_horrizon,
     key: Key[Array, ""],
     dynamical_system: CR3BP,
     measurement_system: AbstractMeasurementSystem,
@@ -129,7 +130,7 @@ def evaluate_tracking_grid(
             def evaluate_mp(mp_key, mp_val):
                 return evaluate_tracking_single_case(
                     dv_val, mp_val, mp_key,
-                    dynamical_system, measurement_system, stochastic_filter, tracking_fn
+                    dynamical_system, measurement_system, stochastic_filter, tracking_fn, time_horrizon
                 )
             
             return eqx.filter_vmap(evaluate_mp)(mp_keys, maneuver_proportion_range)

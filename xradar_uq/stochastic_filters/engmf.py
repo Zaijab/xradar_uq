@@ -18,7 +18,7 @@ def sample_gaussian_mixture(key: Key[Array, ""], point: Float[Array, "state_dim"
 
 
 class EnGMF(AbstractFilter, strict=True):
-    
+    ensemble_size: int = 50
     debug: bool = False
     sampling_function: Callable[[Key[Array, ""], Float[Array, "state_dim"], Float[Array, "state_dim state_dim"]], Float[Array, "state_dim"]] = jax.tree_util.Partial(sample_gaussian_mixture)
     silverman_bandwidth_scaling: float = 1.0
