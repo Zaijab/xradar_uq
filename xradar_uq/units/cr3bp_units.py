@@ -1,5 +1,6 @@
 # Real time to CR3BP time conversion
-TU_seconds = 375730  # Time unit in seconds
+TU_seconds = 382981  # Time unit in seconds
+LU_kilometeers = 389703
 TU_days = TU_seconds / (24 * 3600)  # ≈ 4.35 days
 
 def real_time_to_cr3bp(real_seconds):
