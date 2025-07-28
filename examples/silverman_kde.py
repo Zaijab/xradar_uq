@@ -1,15 +1,334 @@
-import distrax
 import jax
 import jax.numpy as jnp
+from xradar_uq.dynamical_systems import CR3BP
+from xradar_uq.measurement_systems import AnglesOnly
+from xradar_uq.statistics import silverman_kde_estimate
 
-@jax.jit
+###
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+from beartype import beartype as typechecker
+from jaxtyping import Array, Float, Int, jaxtyped
+
+
+@jaxtyped(typechecker=typechecker)
+class GMM(eqx.Module):
+    means: Float[Array, "num_components state_dim"]
+    covs: Float[Array, "num_components state_dim state_dim"]
+    weights: Float[Array, "num_components"]
+    
+    @jaxtyped(typechecker=typechecker)
+    def __init__(self, means, covs, weights, max_components=1):
+        max_components = max(means.shape[0], max_components)
+        pad_width = max_components - means.shape[0]
+        self.means = jnp.pad(means, ((0, pad_width), (0, 0)))
+        self.covs = jnp.pad(covs, ((0, pad_width), (0, 0), (0, 0)))
+        self.weights = jnp.pad(weights, (0, pad_width))
+    
+    @jaxtyped(typechecker=typechecker)
+    def pdf(self, x: Float[Array, "state_dim"]) -> Float[Array, ""]:
+        """Compute probability density at point x."""
+        
+        def component_pdf(mean, cov, weight):
+            L = jnp.linalg.cholesky(cov)
+            
+            diff = x - mean
+            y = jax.scipy.linalg.solve_triangular(L, diff, lower=True)
+            
+            log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+            quad_form = jnp.sum(y**2)
+            
+            k = mean.shape[0]
+            log_prob = -0.5 * (k * jnp.log(2 * jnp.pi) + log_det + quad_form)
+            
+            return weight * jnp.exp(log_prob)
+        
+        component_probs = eqx.filter_vmap(component_pdf)(
+            self.means, self.covs, self.weights
+        )
+        
+        return jnp.sum(component_probs)
+    
+    @jaxtyped(typechecker=typechecker) 
+    def log_pdf(self, x: Float[Array, "state_dim"]) -> Float[Array, ""]:
+        """Compute log probability density."""
+        
+        def component_log_pdf(mean, cov, log_weight):
+            L = jnp.linalg.cholesky(cov)
+            
+            diff = x - mean
+            y = jax.scipy.linalg.solve_triangular(L, diff, lower=True)
+            
+            log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+            quad_form = jnp.sum(y**2)
+            
+            k = mean.shape[0]
+            log_prob = -0.5 * (k * jnp.log(2 * jnp.pi) + log_det + quad_form)
+            
+            return log_weight + log_prob
+        
+        log_weights = jnp.log(self.weights)
+        log_component_probs = eqx.filter_vmap(component_log_pdf)(
+            self.means, self.covs, log_weights
+        )
+        
+        return jax.scipy.special.logsumexp(log_component_probs)
+
+    @jaxtyped(typechecker=typechecker)
+    def marginalize_to_position(self) -> "GMM":
+        """Marginalize 6D GMM (x,y,z,vx,vy,vz) to 3D position (x,y,z)."""
+        position_means = self.means[:, :3]
+        position_covs = self.covs[:, :3, :3]
+        return GMM(position_means, position_covs, self.weights)
+
+    @jaxtyped(typechecker=typechecker)
+    def spherical_angles_to_unit_vector(
+        self, angles: Float[Array, "2"]
+    ) -> Float[Array, "3"]:
+        """Convert (azimuth, inclination) to unit vector v ∈ S²."""
+        azimuth, inclination = angles[0], angles[1]
+
+        unit_vector = jnp.array([
+            jnp.cos(azimuth) * jnp.sin(inclination),  # x = cos(θ₁)sin(θ₂)
+            jnp.sin(azimuth) * jnp.sin(inclination),  # y = sin(θ₁)sin(θ₂) 
+            jnp.cos(inclination)                      # z = cos(θ₂)
+        ])
+        # assert jnp.allclose(jnp.linalg.norm(unit_vector), 1.0)
+        return unit_vector
+
+    @jaxtyped(typechecker=typechecker)
+    def positional_component_logpdf(
+        self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
+    ) -> Float[Array, ""]:
+        """Single component projected normal log-PDF with numerical stability."""
+        angles = jnp.deg2rad(angles)
+        unit_vector = self.spherical_angles_to_unit_vector(angles)
+        mean = self.means[component_idx, :3]
+        cov = self.covs[component_idx, :3, :3]
+        log_weight = jnp.log(self.weights[component_idx])
+
+        L = jnp.linalg.cholesky(cov)
+        sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
+        sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
+
+        # Numerical stability: add small regularization to denominator
+        v_sigma_inv_v = jnp.dot(unit_vector, sigma_inv_v)
+        eps = jnp.finfo(jnp.float32).eps
+        v_sigma_inv_v = jnp.maximum(v_sigma_inv_v, eps)
+
+        mu_sigma_inv_v = jnp.dot(mean, sigma_inv_v)
+        t_statistic = mu_sigma_inv_v / jnp.sqrt(v_sigma_inv_v)
+
+        # Log-space computation for projected normal factor
+        log_phi_t = jax.scipy.stats.norm.logpdf(t_statistic)
+        log_big_phi_t = jax.scipy.stats.norm.logcdf(t_statistic)
+
+        # Stable computation of log(Φ(t) + t·φ(t))
+        phi_t = jnp.exp(log_phi_t)
+        ratio_term = jnp.exp(log_big_phi_t - log_phi_t)
+        log_projected_factor = log_phi_t + jnp.log1p(ratio_term + t_statistic)
+
+        # Remaining terms in log-space
+        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+        log_normalization = -0.5 * (3.0 * jnp.log(2.0 * jnp.pi) + log_det_sigma)
+        quadratic_form = jnp.dot(mean, sigma_inv_mu)
+        log_mean_correction = -0.5 * quadratic_form
+
+        return log_weight + log_normalization + log_mean_correction + log_projected_factor
+
+    ###
+
+    @jaxtyped(typechecker=typechecker)
+    def positional_component_logpdf(
+        self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
+    ) -> Float[Array, ""]:
+        """Single component projected normal log-PDF with numerical stability."""
+        angles = jnp.deg2rad(angles)
+        unit_vector = self.spherical_angles_to_unit_vector(angles)
+        mean = self.means[component_idx, :3]
+        cov = self.covs[component_idx, :3, :3]
+        log_weight = jnp.log(self.weights[component_idx])
+
+        L = jnp.linalg.cholesky(cov)
+        sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
+        sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
+
+        # Numerical stability: add small regularization to denominator
+        v_sigma_inv_v = jnp.dot(unit_vector, sigma_inv_v)
+        eps = jnp.finfo(jnp.float32).eps
+        v_sigma_inv_v = jnp.maximum(v_sigma_inv_v, eps)
+
+        mu_sigma_inv_v = jnp.dot(mean, sigma_inv_v)
+        t_statistic = mu_sigma_inv_v / jnp.sqrt(v_sigma_inv_v)
+
+        # Numerically stable projected normal factor computation
+        phi_t = jax.scipy.stats.norm.pdf(t_statistic)
+        big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)
+
+        # Handle extreme t_statistic values
+        projected_factor = jnp.where(
+            t_statistic > 10.0,  # Large positive t: Φ(t) ≈ 1, φ(t) ≈ 0
+            phi_t * (1.0 + t_statistic * phi_t),
+            jnp.where(
+                t_statistic < -10.0,  # Large negative t: Φ(t) ≈ 0
+                phi_t * t_statistic * phi_t,  # Only t·φ(t) term survives
+                phi_t * (big_phi_t + t_statistic * phi_t)  # Normal case
+            )
+        )
+
+        log_projected_factor = jnp.log(jnp.maximum(projected_factor, eps))
+
+        # Remaining terms in log-space
+        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+        log_normalization = -0.5 * (3.0 * jnp.log(2.0 * jnp.pi) + log_det_sigma)
+        quadratic_form = jnp.dot(mean, sigma_inv_mu)
+        log_mean_correction = -0.5 * quadratic_form
+
+        return log_weight + log_normalization + log_mean_correction + log_projected_factor
+
+    ###
+    
+    @jaxtyped(typechecker=typechecker)
+    def positional_logpdf(
+        self, angles: Float[Array, "2"]
+    ) -> Float[Array, ""]:
+        """Evaluate positional normal logpdf at (azimuth, inclination) angles."""
+        component_indices = jnp.arange(self.means.shape[0])
+
+        def single_component_logpdf(idx):
+            return self.positional_component_logpdf(idx, angles)
+
+        component_logpdfs = eqx.filter_vmap(single_component_logpdf)(component_indices)
+        return jax.scipy.special.logsumexp(component_logpdfs)
+
+
+    @jaxtyped(typechecker=typechecker)
+    def positional_component_pdf(
+        self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
+    ) -> Float[Array, ""]:
+        """Single component positional normal PDF per Wikipedia formula."""
+        angles = jnp.deg2rad(angles)
+        # Convert spherical angles (azimuth, inclination) to unit vector u ∈ S²
+        unit_vector = self.spherical_angles_to_unit_vector(angles)
+
+        # Extract parameters for this mixture component
+        mean = self.means[component_idx, :3]           # μ ∈ ℝ³ (mean vector)
+        cov = self.covs[component_idx, :3, :3]         # Σ ∈ ℝ³ˣ³ (covariance matrix)  
+        weight = self.weights[component_idx]           # mixture weight
+        mean = mean + jnp.array([0.012150584269940, 0.0, 0.0]) # Shifting means to be Earth centered
+        
+        # Efficient computation via Cholesky decomposition: Σ = LLᵀ
+        L = jnp.linalg.cholesky(cov)                   # L: lower triangular Cholesky factor
+        sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)        # Σ⁻¹μ
+        sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)  # Σ⁻¹u
+
+        # Compute t-statistic: t = (μᵀΣ⁻¹u) / √(uᵀΣ⁻¹u)
+        numerator = jnp.dot(mean, sigma_inv_v)         # μᵀΣ⁻¹u
+        denominator = jnp.sqrt(jnp.dot(unit_vector, sigma_inv_v))  # √(uᵀΣ⁻¹u)
+        t_statistic = numerator / denominator          # t = (μᵀΣ⁻¹u) / √(uᵀΣ⁻¹u)
+
+        # Standard normal PDF and CDF evaluated at t
+        phi_t = jax.scipy.stats.norm.pdf(t_statistic)  # φ(t) = (1/√2π)exp(-t²/2)
+        big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)  # Φ(t) = ∫_{-∞}^t φ(s)ds
+
+        # Compute normalization constant: 1/((2π)^(3/2)|Σ|^(1/2))
+        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))  # log|Σ| = 2∑log(Lᵢᵢ)
+        normalization = jnp.exp(-0.5 * (3.0 * jnp.log(2.0 * jnp.pi) + log_det_sigma))
+
+        # Wikipedia quadratic form: exp(-½μᵀΣ⁻¹μ)
+        quadratic_form = jnp.dot(mean, sigma_inv_mu)   # μᵀΣ⁻¹μ
+        mean_correction = jnp.exp(-0.5 * quadratic_form)
+
+        # Wikipedia projected normal factor: φ(t)[Φ(t) + tφ(t)]
+        projected_factor = phi_t * (big_phi_t + t_statistic * phi_t)
+
+        # Complete Wikipedia formula: weight × normalization × mean_correction × projected_factor
+        result = weight * normalization * mean_correction * projected_factor
+
+        return result
+
+    @jaxtyped(typechecker=typechecker)
+    def positional_pdf(
+        self, angles: Float[Array, "2"]
+    ) -> Float[Array, ""]:
+        """Evaluate positional normal PDF at (azimuth, inclination) angles."""
+        component_indices = jnp.arange(self.means.shape[0])
+        print("hello")
+
+        def single_component_pdf(idx):
+            return self.positional_component_pdf(idx, angles)
+
+        component_pdfs = eqx.filter_vmap(single_component_pdf)(component_indices)
+        return jnp.sum(component_pdfs)
+
+###
+
+
+
+###
+
+@eqx.filter_jit
 def silverman_kde_estimate(means):
     n, d = means.shape[0], means.shape[1]
     weights = jnp.ones(n) / n
-    silverman_beta = (((4) / (d + 2)) ** ((2) / (d + 4))) #* (n ** ((-2) / (d + 4)))
+    silverman_beta = (((4) / (d + 2)) ** ((2) / (d + 4))) * (n ** ((-2) / (d + 4)))
     covs = jnp.tile(silverman_beta * jnp.cov(means.T), reps=(n, 1, 1))
-    components = distrax.MultivariateNormalFullCovariance(loc=means, covariance_matrix=covs)
-    return distrax.MixtureSameFamily(
-        mixture_distribution=distrax.Categorical(probs=weights),
-        components_distribution=components
-    )
+    return GMM(means, covs, weights)
+
+@eqx.filter_jit
+def silverman_kde_estimate(means):
+    n, d = means.shape[0], means.shape[1]
+    weights = jnp.ones(n) / n
+    
+    # Complete Silverman rule: h = (4/(d+2))^(2/(d+4)) * n^(-2/(d+4))
+    silverman_factor = ((4) / (d + 2)) ** (2 / (d + 4))
+    size_factor = n ** (-2 / (d + 4))
+    bandwidth = silverman_factor * size_factor
+    
+    # Regularization: prevent singular covariances
+    sample_cov = jnp.cov(means.T)
+    min_eigenval = jnp.min(jnp.linalg.eigvals(sample_cov))
+    regularization = jnp.maximum(1e-6, 0.01 * min_eigenval)
+    regularized_cov = sample_cov + regularization * jnp.eye(d)
+    
+    covs = jnp.tile(bandwidth * regularized_cov, reps=(n, 1, 1))
+    return GMM(means, covs, weights)
+
+@eqx.filter_jit
+def silverman_kde_estimate(means):
+    n, d = means.shape[0], means.shape[1]
+    weights = jnp.ones(n) / n
+    
+    sample_cov = jnp.cov(means.T)
+    
+    # For state estimation: use Scott's rule with minimum bandwidth
+    scott_factor = n ** (-1 / (d + 4))
+    scott_cov = scott_factor ** 2 * sample_cov
+    
+    # Regularization: ensure minimum eigenvalues for numerical stability
+    min_bandwidth = 1e-4  # Appropriate for CR3BP position units
+    eigenvals, eigenvecs = jnp.linalg.eigh(scott_cov)
+    regularized_eigenvals = jnp.maximum(eigenvals, min_bandwidth)
+    regularized_cov = eigenvecs @ jnp.diag(regularized_eigenvals) @ eigenvecs.T
+    
+    covs = jnp.tile(regularized_cov, reps=(n, 1, 1))
+    return GMM(means, covs, weights)
+
+###
+dynamical_system = CR3BP(
+    mean=jnp.array([1.03023361,  0.06873724,  0.14764195,  0.15762372, -0.18109177, 0.38957565]),
+    # covariance=CR3BP().covariance,
+)
+true_state = dynamical_system.initial_state()
+
+key = jax.random.key(42)
+key, subkey = jax.random.split(key)
+posterior_ensemble = dynamical_system.generate(subkey, batch_size=50)
+
+angles = AnglesOnly()
+true_angles = jnp.rad2deg(angles(true_state))
+
+gmm = silverman_kde_estimate(posterior_ensemble)
+gmm.positional_logpdf(true_angles)
