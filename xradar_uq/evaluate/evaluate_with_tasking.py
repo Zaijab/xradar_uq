@@ -68,7 +68,7 @@ def tracking_scan_step(
     return new_carry, is_measurable
 
 
-@jaxtyped(typechecker=typechecker)
+# @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
 def evaluate_tracking_single_case(
     delta_v_magnitude: float | Float[Array, ""],
@@ -104,7 +104,7 @@ def evaluate_tracking_single_case(
     return found_proportion
 
 
-@jaxtyped(typechecker=typechecker)
+# @jaxtyped(typechecker=typechecker)
 @eqx.filter_jit
 def evaluate_tracking_grid(
     delta_v_range: Float[Array, "n_dv"],
