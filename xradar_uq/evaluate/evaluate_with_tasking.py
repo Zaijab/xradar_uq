@@ -95,7 +95,7 @@ def evaluate_tracking_single_case(
     tracking_fn: Callable[[Float[Array, "state_dim"], Float[Array, "batch_size state_dim"], Key[Array, ""]], Bool[Array, ""]],
     time_range: float | Float[Array, ""] = 0.242,
     measurement_time: int = 200,
-    initial_fuel: float = 1.0,
+    initial_fuel: float = 1.25,
 ) -> Float[Array, ""]:
     key, state_key, impulse_key = jax.random.split(key, 3)
     
