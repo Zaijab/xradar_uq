@@ -326,95 +326,95 @@ class GMM(eqx.Module):
 
     ###
     
-    @jaxtyped(typechecker=typechecker)
-    @eqx.filter_jit
-    def positional_component_logpdf(
-        self,
-        component_idx,
-        point: Float[Array, "2"],
-        # means: Float[Array, "num_components 3"],
-        # covs: Float[Array, "num_components 3 3"], 
-        # weights: Float[Array, "num_components"],
-        mu: float = CR3BP_MU
-    ) -> Float[Array, ""]:
-        """
-        CR3BP-aware projected normal logpdf.
+    # @jaxtyped(typechecker=typechecker)
+    # @eqx.filter_jit
+    # def positional_component_logpdf(
+    #     self,
+    #     component_idx,
+    #     point: Float[Array, "2"],
+    #     # means: Float[Array, "num_components 3"],
+    #     # covs: Float[Array, "num_components 3 3"], 
+    #     # weights: Float[Array, "num_components"],
+    #     mu: float = CR3BP_MU
+    # ) -> Float[Array, ""]:
+    #     """
+    #     CR3BP-aware projected normal logpdf.
 
-        Args:
-            component_idx: Which mixture component
-            point: [azimuth, elevation] in radians, measured from Earth
-            means: Satellite positions in barycentric coordinates  
-            covs: Covariance matrices in barycentric coordinates
-            weights: Mixture weights
-            mu: CR3BP mass parameter (Earth-Moon system)
-        """
+    #     Args:
+    #         component_idx: Which mixture component
+    #         point: [azimuth, elevation] in radians, measured from Earth
+    #         means: Satellite positions in barycentric coordinates  
+    #         covs: Covariance matrices in barycentric coordinates
+    #         weights: Mixture weights
+    #         mu: CR3BP mass parameter (Earth-Moon system)
+    #     """
 
-        # Extract component parameters (barycentric coordinates)
-        mean_barycentric = self.means[component_idx, :3]
-        cov_barycentric = self.covs[component_idx, :3, :3]  
-        weight = self.weights[component_idx]
+    #     # Extract component parameters (barycentric coordinates)
+    #     mean_barycentric = self.means[component_idx, :3]
+    #     cov_barycentric = self.covs[component_idx, :3, :3]  
+    #     weight = self.weights[component_idx]
 
-        # Transform to Earth-centered coordinates
-        # Earth is at (-μ, 0, 0) in barycentric frame
-        earth_position = jnp.array([-mu, 0.0, 0.0])
-        mean_earth_centered = mean_barycentric - earth_position
-        # Covariance matrix doesn't change under translation
-        cov_earth_centered = cov_barycentric
+    #     # Transform to Earth-centered coordinates
+    #     # Earth is at (-μ, 0, 0) in barycentric frame
+    #     earth_position = jnp.array([-mu, 0.0, 0.0])
+    #     mean_earth_centered = mean_barycentric - earth_position
+    #     # Covariance matrix doesn't change under translation
+    #     cov_earth_centered = cov_barycentric
 
-        # Convert spherical angles to unit vector (from Earth perspective)
-        def spherical_to_cartesian_from_earth(angles):
-            azimuth, elevation = angles[0], angles[1]
-            return jnp.array([
-                jnp.cos(elevation) * jnp.cos(azimuth),
-                jnp.cos(elevation) * jnp.sin(azimuth), 
-                jnp.sin(elevation)
-            ])
+    #     # Convert spherical angles to unit vector (from Earth perspective)
+    #     def spherical_to_cartesian_from_earth(angles):
+    #         azimuth, elevation = angles[0], angles[1]
+    #         return jnp.array([
+    #             jnp.cos(elevation) * jnp.cos(azimuth),
+    #             jnp.cos(elevation) * jnp.sin(azimuth), 
+    #             jnp.sin(elevation)
+    #         ])
 
-        unit_vector = spherical_to_cartesian_from_earth(point)
+    #     unit_vector = spherical_to_cartesian_from_earth(point)
 
-        # Now compute projected normal with Earth-centered parameters
-        L = jnp.linalg.cholesky(cov_earth_centered)
-        sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean_earth_centered)
-        sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
+    #     # Now compute projected normal with Earth-centered parameters
+    #     L = jnp.linalg.cholesky(cov_earth_centered)
+    #     sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean_earth_centered)
+    #     sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
 
-        numerator = jnp.dot(mean_earth_centered, sigma_inv_v)
-        denominator = jnp.sqrt(jnp.dot(unit_vector, sigma_inv_v))
-        t_statistic = numerator / denominator
+    #     numerator = jnp.dot(mean_earth_centered, sigma_inv_v)
+    #     denominator = jnp.sqrt(jnp.dot(unit_vector, sigma_inv_v))
+    #     t_statistic = numerator / denominator
 
-        # Wikipedia factor with numerical stability
-        phi_t = jax.scipy.stats.norm.pdf(t_statistic)
-        big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)
+    #     # Wikipedia factor with numerical stability
+    #     phi_t = jax.scipy.stats.norm.pdf(t_statistic)
+    #     big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)
 
-        # Safe ratio computation for extreme values
-        def safe_ratio(t, phi, big_phi):
-            normal_ratio = jnp.where(phi > 1e-50, big_phi / phi, 0.0)
-            mills_approx = t + 1.0 / jnp.maximum(jnp.abs(t), 1.0)
+    #     # Safe ratio computation for extreme values
+    #     def safe_ratio(t, phi, big_phi):
+    #         normal_ratio = jnp.where(phi > 1e-50, big_phi / phi, 0.0)
+    #         mills_approx = t + 1.0 / jnp.maximum(jnp.abs(t), 1.0)
 
-            return jnp.where(
-                t > 8.0, mills_approx,
-                jnp.where(t < -8.0, 0.0, normal_ratio)
-            )
+    #         return jnp.where(
+    #             t > 8.0, mills_approx,
+    #             jnp.where(t < -8.0, 0.0, normal_ratio)
+    #         )
 
-        ratio_term = safe_ratio(t_statistic, phi_t, big_phi_t)
-        wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
-        wikipedia_factor = jnp.maximum(wikipedia_factor, 1e-50)  # Ensure positive
+    #     ratio_term = safe_ratio(t_statistic, phi_t, big_phi_t)
+    #     wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
+    #     wikipedia_factor = jnp.maximum(wikipedia_factor, 1e-50)  # Ensure positive
 
-        # Normalization components
-        quadratic_form = jnp.dot(mean_earth_centered, sigma_inv_mu)
-        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
-        gamma_term = jnp.dot(unit_vector, sigma_inv_v)
+    #     # Normalization components
+    #     quadratic_form = jnp.dot(mean_earth_centered, sigma_inv_mu)
+    #     log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+    #     gamma_term = jnp.dot(unit_vector, sigma_inv_v)
 
-        # Log normalization: -½μᵀΣ⁻¹μ - ½log|Σ| - (3/2)log(2πγᵀΣ⁻¹γ)
-        log_normalization = (
-            -0.5 * quadratic_form
-            - 0.5 * log_det_sigma  
-            - 1.5 * jnp.log(2.0 * jnp.pi * gamma_term)
-        )
+    #     # Log normalization: -½μᵀΣ⁻¹μ - ½log|Σ| - (3/2)log(2πγᵀΣ⁻¹γ)
+    #     log_normalization = (
+    #         -0.5 * quadratic_form
+    #         - 0.5 * log_det_sigma  
+    #         - 1.5 * jnp.log(2.0 * jnp.pi * gamma_term)
+    #     )
 
-        log_wikipedia_factor = jnp.log(wikipedia_factor)
-        log_weight = jnp.log(jnp.maximum(weight, 1e-50))
+    #     log_wikipedia_factor = jnp.log(wikipedia_factor)
+    #     log_weight = jnp.log(jnp.maximum(weight, 1e-50))
 
-        return log_weight + log_normalization + log_wikipedia_factor
+    #     return log_weight + log_normalization + log_wikipedia_factor
 
     ###
     
@@ -884,11 +884,12 @@ gmm = silverman_kde_estimate(posterior_ensemble)
 # print("")
 
 # Your existing workflow, but frame-aware
+dynamical_system = CR3BP(covariance=1_000_000 * CR3BP().covariance)
 posterior_ensemble = dynamical_system.generate(key)
 gmm = silverman_kde_estimate(posterior_ensemble)
 
 # Now use frame-corrected projected normal
-test_angles = jnp.array([10.0, 90.0])  # From Earth perspective
+test_angles = jnp.array([10.0, 89.0])  # From Earth perspective
 # result = cr3bp_positional_component_logpdf(0, test_angles, gmm.means[:, :3], gmm.covs[:, :3, :3], gmm.weights)
 
 gmm.positional_logpdf(test_angles)
