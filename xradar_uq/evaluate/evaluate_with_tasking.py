@@ -4,13 +4,12 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from beartype import beartype as typechecker
-from jaxtyping import Array, Bool, Float, Int, Key, jaxtyped
-
+from jaxtyping import Array, Bool, Float, Int, Key
 from xradar_uq.dynamical_systems import CR3BP
-from xradar_uq.measurement_systems import AbstractMeasurementSystem
+from xradar_uq.measurement_systems import (AbstractMeasurementSystem,
+                                           simulate_thrust)
 from xradar_uq.statistics import generate_random_impulse_velocity
-from xradar_uq.stochastic_filters import EnGMF, AbstractFilter
-
+from xradar_uq.stochastic_filters import AbstractFilter
 
 # determine if maneuver occurs each day using bernoulli p with prop
 #    if it does, using uniform random to determine when WITHIN the day the maneuver occurs
@@ -19,6 +18,13 @@ from xradar_uq.stochastic_filters import EnGMF, AbstractFilter
 # check if maneuver occurs within [measurement_id * time_range, (measurement_id+1) * time_range]
 #     if maneuver occurs find local time = maneuver_global_time - (measurement_id * time_range)
 #     use that local time to break up true state dynamic flow, applying associated thrust at local tim
+
+
+@eqx.filter_jit
+def maneuver_aware(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system):
+    thrust_ensemble = simulate_thrust(thrust_key, ensemble, num_simulations, delta_v_magnitude)
+    thrust_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, thrust_ensemble)
+    return thrust_ensemble
 
 
 @eqx.filter_jit
@@ -72,9 +78,18 @@ def tracking_scan_step(
     
     def flow_ensemble_no_maneuvers(state):
         return dynamical_system.flow(0.0, time_range, state)
+
+    @eqx.filter_jit
+    def reachable_set(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system, n_directions=100):
+        thrust_ensemble = simulate_thrust(thrust_key, ensemble, num_simulations, delta_v_magnitude)
+        thrust_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, thrust_ensemble)
+        return thrust_ensemble
+
+    
     
     true_state_next, total_fuel_next = apply_scheduled_maneuvers_true_state(true_state)
-    prior_ensemble = eqx.filter_vmap(flow_ensemble_no_maneuvers)(posterior_ensemble)
+    # prior_ensemble = eqx.filter_vmap(flow_ensemble_no_maneuvers)(posterior_ensemble)
+    prior_ensemble = maneuver_aware(thrust_key, posterior_ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system)
     
     is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble, dynamical_system, time_range, delta_v_magnitude)
     posterior_ensemble_next = jnp.where(is_measurable, stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state_next, measurement_key), measurement_system), prior_ensemble)
