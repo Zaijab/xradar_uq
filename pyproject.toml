@@ -25,6 +25,7 @@ dependencies = [
     "scikit-learn",
     "ott-jax",
     "polytopax",
+    "numpyro",
 ]
 
 [project.optional-dependencies]

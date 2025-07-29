@@ -156,10 +156,10 @@ class UKF(AbstractFilter, strict=True):
         posterior_cov = prior_cov - kalman_gain @ innovation_cov @ kalman_gain.T
         
         # Ensure positive definiteness
-        posterior_cov = (posterior_cov + posterior_cov.T) / 2
-        eigenvals, eigenvecs = jnp.linalg.eigh(posterior_cov)
-        eigenvals = jnp.maximum(eigenvals, self.regularization)
-        posterior_cov = eigenvecs @ jnp.diag(eigenvals) @ eigenvecs.T
+        # posterior_cov = (posterior_cov + posterior_cov.T) / 2
+        # eigenvals, eigenvecs = jnp.linalg.eigh(posterior_cov)
+        # eigenvals = jnp.maximum(eigenvals, self.regularization)
+        # posterior_cov = eigenvecs @ jnp.diag(eigenvals) @ eigenvecs.T
         
         # Generate new sigma points from posterior
         posterior_sigma_points = self.generate_sigma_points(posterior_mean, posterior_cov)
