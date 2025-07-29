@@ -272,96 +272,56 @@ class GMM(eqx.Module):
         # assert jnp.allclose(jnp.linalg.norm(unit_vector), 1.0)
         return unit_vector
 
-    @jaxtyped(typechecker=typechecker)
-    def positional_component_logpdf(
-        self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
-    ) -> Float[Array, ""]:
-        """Single component projected normal log-PDF with numerical stability."""
-        angles = jnp.deg2rad(angles)
-        unit_vector = self.spherical_angles_to_unit_vector(angles)
-        mean = self.means[component_idx, :3]
-        cov = self.covs[component_idx, :3, :3]
-        log_weight = jnp.log(self.weights[component_idx])
-
-        L = jnp.linalg.cholesky(cov)
-        sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
-        sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
-
-        # Numerical stability: add small regularization to denominator
-        v_sigma_inv_v = jnp.dot(unit_vector, sigma_inv_v)
-        eps = jnp.finfo(jnp.float32).eps
-        v_sigma_inv_v = jnp.maximum(v_sigma_inv_v, eps)
-
-        mu_sigma_inv_v = jnp.dot(mean, sigma_inv_v)
-        t_statistic = mu_sigma_inv_v / jnp.sqrt(v_sigma_inv_v)
-
-        # Log-space computation for projected normal factor
-        log_phi_t = jax.scipy.stats.norm.logpdf(t_statistic)
-        log_big_phi_t = jax.scipy.stats.norm.logcdf(t_statistic)
-
-        # Stable computation of log(Φ(t) + t·φ(t))
-        phi_t = jnp.exp(log_phi_t)
-        ratio_term = jnp.exp(log_big_phi_t - log_phi_t)
-        log_projected_factor = log_phi_t + jnp.log1p(ratio_term + t_statistic)
-
-        # Remaining terms in log-space
-        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
-        log_normalization = -0.5 * (3.0 * jnp.log(2.0 * jnp.pi) + log_det_sigma)
-        quadratic_form = jnp.dot(mean, sigma_inv_mu)
-        log_mean_correction = -0.5 * quadratic_form
-
-        return log_weight + log_normalization + log_mean_correction + log_projected_factor
-
     ###
-
+    
     @jaxtyped(typechecker=typechecker)
+    @eqx.filter_jit
     def positional_component_logpdf(
-        self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
+        self, component_idx,
+        point: Float[Array, "2"], 
+        mean: Float[Array, "3"], 
+        cov: Float[Array, "3 3"]
     ) -> Float[Array, ""]:
-        """Single component projected normal log-PDF with numerical stability."""
-        angles = jnp.deg2rad(angles)
-        unit_vector = self.spherical_angles_to_unit_vector(angles)
-        mean = self.means[component_idx, :3]
-        cov = self.covs[component_idx, :3, :3]
-        log_weight = jnp.log(self.weights[component_idx])
+        """CORRECTED implementation matching Wikipedia formula exactly."""
+        mean = self.means[component_idx]
+        cov = self.covs[component_idx]
+        unit_vector = spherical_to_cartesian(point)
 
         L = jnp.linalg.cholesky(cov)
         sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
         sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
 
-        # Numerical stability: add small regularization to denominator
-        v_sigma_inv_v = jnp.dot(unit_vector, sigma_inv_v)
-        eps = jnp.finfo(jnp.float32).eps
-        v_sigma_inv_v = jnp.maximum(v_sigma_inv_v, eps)
+        numerator = jnp.dot(mean, sigma_inv_v)
+        denominator = jnp.sqrt(jnp.dot(unit_vector, sigma_inv_v))
+        t_statistic = numerator / denominator
 
-        mu_sigma_inv_v = jnp.dot(mean, sigma_inv_v)
-        t_statistic = mu_sigma_inv_v / jnp.sqrt(v_sigma_inv_v)
-
-        # Numerically stable projected normal factor computation
+        # Wikipedia factor: Φ(T)/φ(T) + T(1 + TΦ(T)/φ(T))
+        # NOT [Φ(T)/φ(T) + T][1 + TΦ(T)/φ(T)]
         phi_t = jax.scipy.stats.norm.pdf(t_statistic)
         big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)
 
-        # Handle extreme t_statistic values
-        projected_factor = jnp.where(
-            t_statistic > 10.0,  # Large positive t: Φ(t) ≈ 1, φ(t) ≈ 0
-            phi_t * (1.0 + t_statistic * phi_t),
-            jnp.where(
-                t_statistic < -10.0,  # Large negative t: Φ(t) ≈ 0
-                phi_t * t_statistic * phi_t,  # Only t·φ(t) term survives
-                phi_t * (big_phi_t + t_statistic * phi_t)  # Normal case
-            )
+        ratio_term = big_phi_t / phi_t  # Φ(T)/φ(T)
+        wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
+
+        # CORRECTED normalization: Wikipedia formula exactly
+        # p = (e^(-½μᵀΣ⁻¹μ)) / (√|Σ| × (2πγᵀΣ⁻¹γ)^(3/2)) × wikipedia_factor
+
+        quadratic_form = jnp.dot(mean, sigma_inv_mu)  # μᵀΣ⁻¹μ
+        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))  # log|Σ|
+        gamma_term = jnp.dot(unit_vector, sigma_inv_v)  # γᵀΣ⁻¹γ
+
+        # Log normalization: -½μᵀΣ⁻¹μ - ½log|Σ| - (3/2)log(2πγᵀΣ⁻¹γ)
+        log_normalization = (
+            -0.5 * quadratic_form
+            - 0.5 * log_det_sigma  
+            - 1.5 * jnp.log(2.0 * jnp.pi * gamma_term)
         )
 
-        log_projected_factor = jnp.log(jnp.maximum(projected_factor, eps))
+        log_wikipedia_factor = jnp.log(wikipedia_factor)
 
-        # Remaining terms in log-space
-        log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
-        log_normalization = -0.5 * (3.0 * jnp.log(2.0 * jnp.pi) + log_det_sigma)
-        quadratic_form = jnp.dot(mean, sigma_inv_mu)
-        log_mean_correction = -0.5 * quadratic_form
+        return log_normalization + log_wikipedia_factor
 
-        return log_weight + log_normalization + log_mean_correction + log_projected_factor
-
+    
     ###
     
     @jaxtyped(typechecker=typechecker)
@@ -457,3 +417,6 @@ def silverman_kde_estimate(means):
     
     covs = jnp.tile(regularized_cov, reps=(n, 1, 1))
     return GMM(means, covs, weights)
+
+
+
