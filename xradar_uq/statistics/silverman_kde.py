@@ -283,7 +283,7 @@ class GMM(eqx.Module):
         """CORRECTED implementation matching Wikipedia formula exactly."""
         mean = self.means[component_idx]
         cov = self.covs[component_idx]
-        unit_vector = spherical_to_cartesian(point)
+        unit_vector = self.spherical_angles_to_unit_vector(point)
 
         L = jnp.linalg.cholesky(cov)
         sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
