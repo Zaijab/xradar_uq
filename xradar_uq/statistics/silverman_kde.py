@@ -278,9 +278,7 @@ class GMM(eqx.Module):
     @eqx.filter_jit
     def positional_component_logpdf(
         self, component_idx,
-        point: Float[Array, "2"], 
-        mean: Float[Array, "3"], 
-        cov: Float[Array, "3 3"]
+        point: Float[Array, "2"],
     ) -> Float[Array, ""]:
         """CORRECTED implementation matching Wikipedia formula exactly."""
         mean = self.means[component_idx]
