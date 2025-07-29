@@ -96,7 +96,7 @@ class EnGMF(AbstractFilter, strict=True):
         variable = jax.random.choice(
             subkey,
             prior_ensemble.shape[0],
-            shape=(prior_ensemble.shape[0],),
+            shape=(self.ensemble_size,),
             p=posterior_weights,
         )
         posterior_ensemble = posterior_ensemble[variable, ...]

@@ -23,7 +23,7 @@ from xradar_uq.stochastic_filters import AbstractFilter
 @eqx.filter_jit
 def maneuver_aware(thrust_key, ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system):
     thrust_ensemble = simulate_thrust(thrust_key, ensemble, num_simulations, delta_v_magnitude)
-    thrust_ensemble = eqx.filter_vmap(dynamical_system.flow)(0.0, time_horrizon, thrust_ensemble)
+    thrust_ensemble = eqx.filter_vmap(dynamical_system.flow, in_axes=(None, None, 0))(0.0, time_horrizon, thrust_ensemble)
     return thrust_ensemble
 
 
@@ -89,7 +89,8 @@ def tracking_scan_step(
     
     true_state_next, total_fuel_next = apply_scheduled_maneuvers_true_state(true_state)
     # prior_ensemble = eqx.filter_vmap(flow_ensemble_no_maneuvers)(posterior_ensemble)
-    prior_ensemble = maneuver_aware(thrust_key, posterior_ensemble, time_horrizon, delta_v_magnitude, num_simulations, dynamical_system)
+    num_simulations = 30
+    prior_ensemble = maneuver_aware(thrust_key, posterior_ensemble, time_range, delta_v_magnitude, num_simulations, dynamical_system)
     
     is_measurable = tracking_fn(true_state_next, prior_ensemble, tracking_key, posterior_ensemble, dynamical_system, time_range, delta_v_magnitude)
     posterior_ensemble_next = jnp.where(is_measurable, stochastic_filter.update(update_key, prior_ensemble, measurement_system(true_state_next, measurement_key), measurement_system), prior_ensemble)

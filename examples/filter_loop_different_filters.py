@@ -13,11 +13,11 @@ time_step = 0.12
 
 dynamical_system = CR3BP()
 measurement_system = DeepSpaceNetwork()
-stochastic_filter = UKF()
+stochastic_filter = EnGMF(ensemble_size=50)
 
 true_state = dynamical_system.initial_state() 
 key, subkey = jax.random.split(key)
-posterior_ensemble = dynamical_system.generate(subkey, batch_size=13) 
+posterior_ensemble = dynamical_system.generate(subkey, batch_size=50) 
 
 from typing import Callable
 
