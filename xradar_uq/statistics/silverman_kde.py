@@ -975,12 +975,3 @@ def test_equivalence():
 test_equivalence()
 
 ###
-
-dynamical_system = CR3BP(covariance=1_000_000 * CR3BP().covariance)
-posterior_ensemble = dynamical_system.generate(key)
-gmm = silverman_kde_estimate(posterior_ensemble)
-
-
-test_angles = jnp.array([10.0, 89.0])  # From Earth perspective
-# result = cr3bp_positional_component_logpdf(0, test_angles, gmm.means[:, :3], gmm.covs[:, :3, :3], gmm.weights)
-gmm.positional_logpdf(test_angles)
