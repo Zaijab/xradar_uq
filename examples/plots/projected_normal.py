@@ -1,7 +1,9 @@
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 from beartype import beartype as typechecker
 from xradar_uq.dynamical_systems import CR3BP
+from xradar_uq.measurement_systems import AnglesOnly
 from xradar_uq.statistics import silverman_kde_estimate
 
 # """
@@ -220,13 +222,12 @@ from xradar_uq.statistics import silverman_kde_estimate
 # print("RUNNING NON-ISOTROPIC TEST:")
 # test_nonisotropic_case()
 
-import jax
 key = jax.random.key(0)
-dynamical_system = CR3BP(covariance=1_000_000 * CR3BP().covariance)
+dynamical_system = CR3BP(covariance= CR3BP().covariance)
 posterior_ensemble = dynamical_system.generate(key)
 gmm = silverman_kde_estimate(posterior_ensemble)
 
-
-test_angles = jnp.array([10.0, 89.0])  # From Earth perspective
+test_angles = AnglesOnly()(dynamical_system.initial_state())
+  # From Earth perspective
 # result = cr3bp_positional_component_logpdf(0, test_angles, gmm.means[:, :3], gmm.covs[:, :3, :3], gmm.weights)
 gmm.positional_logpdf(test_angles)
