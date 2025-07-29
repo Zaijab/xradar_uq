@@ -6,6 +6,17 @@ from jaxtyping import Array, Float, Int, jaxtyped
 
 # CR3BP Earth-Moon mass parameter
 CR3BP_MU = 0.012150584269940
+def stable_log_mills_factor(t):
+    def large_t_case():
+        return jnp.log(jnp.abs(t)) + t * (jnp.sign(t) * jnp.abs(t) - 1.0)
+    
+    def normal_case():  
+        phi_t = jax.scipy.stats.norm.pdf(t)
+        big_phi_t = jax.scipy.stats.norm.cdf(t)
+        ratio = big_phi_t / phi_t
+        return jnp.log(ratio + t * (1.0 + t * ratio))
+    
+    return jax.lax.cond(jnp.abs(t) > 8.0, large_t_case, normal_case)
 
 
 @jaxtyped(typechecker=typechecker)
@@ -303,7 +314,10 @@ class GMM(eqx.Module):
         big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)
 
         ratio_term = big_phi_t / phi_t  # Φ(T)/φ(T)
-        wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
+
+
+        log_wikipedia_factor = stable_log_mills_factor(t_statistic)
+        # wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
 
         # CORRECTED normalization: Wikipedia formula exactly
         # p = (e^(-½μᵀΣ⁻¹μ)) / (√|Σ| × (2πγᵀΣ⁻¹γ)^(3/2)) × wikipedia_factor
@@ -319,14 +333,28 @@ class GMM(eqx.Module):
             - 1.5 * jnp.log(2.0 * jnp.pi * gamma_term)
         )
 
-        log_wikipedia_factor = jnp.log(wikipedia_factor)
+        # log_wikipedia_factor = jnp.log(wikipedia_factor)
 
         return log_normalization + log_wikipedia_factor
 
 
     ###
-    
-    # @jaxtyped(typechecker=typechecker)
+
+    @jaxtyped(typechecker=typechecker)
+    def positional_logpdf(
+        self, angles: Float[Array, "2"]
+    ) -> Float[Array, ""]:
+        """Evaluate positional normal logpdf at (azimuth, inclination) angles."""
+        component_indices = jnp.arange(self.means.shape[0])
+
+        def single_component_logpdf(idx):
+            return self.positional_component_logpdf(idx, angles)
+
+        component_logpdfs = eqx.filter_vmap(single_component_logpdf)(component_indices)
+        return jax.scipy.special.logsumexp(component_logpdfs)
+
+
+        # @jaxtyped(typechecker=typechecker)
     # @eqx.filter_jit
     # def positional_component_logpdf(
     #     self,
@@ -418,20 +446,6 @@ class GMM(eqx.Module):
 
     ###
     
-    @jaxtyped(typechecker=typechecker)
-    def positional_logpdf(
-        self, angles: Float[Array, "2"]
-    ) -> Float[Array, ""]:
-        """Evaluate positional normal logpdf at (azimuth, inclination) angles."""
-        component_indices = jnp.arange(self.means.shape[0])
-
-        def single_component_logpdf(idx):
-            return self.positional_component_logpdf(idx, angles)
-
-        component_logpdfs = eqx.filter_vmap(single_component_logpdf)(component_indices)
-        return jax.scipy.special.logsumexp(component_logpdfs)
-
-
     @jaxtyped(typechecker=typechecker)
     def positional_component_pdf(
         self, component_idx: int | Int[Array, ""], angles: Float[Array, "2"]
@@ -884,12 +898,89 @@ gmm = silverman_kde_estimate(posterior_ensemble)
 # print("")
 
 # Your existing workflow, but frame-aware
+
+import jax
+import jax.numpy as jnp
+from jaxtyping import Float, Array, jaxtyped
+from beartype import beartype as typechecker
+import equinox as eqx
+
+# NumPyro's approach (specialized case)
+@jaxtyped(typechecker=typechecker)
+def numpyro_projected_normal_logpdf(
+    concentration: Float[Array, "3"], 
+    unit_vector: Float[Array, "3"]
+) -> Float[Array, ""]:
+    """NumPyro's ray integration approach - assumes Σ = I."""
+    
+    t = jnp.dot(concentration, unit_vector)
+    t2 = t * t
+    r2 = jnp.dot(concentration, concentration) - t2
+    
+    perp_part = -0.5 * r2 - jnp.log(2 * jnp.pi)
+    
+    para_part = jnp.log(
+        t * jnp.exp(-0.5 * t2) / jnp.sqrt(2 * jnp.pi)
+        + (1 + t2) * (1 + jax.scipy.special.erf(t / jnp.sqrt(2))) / 2
+    )
+    
+    return para_part + perp_part
+
+# Your approach (general case)  
+@jaxtyped(typechecker=typechecker)
+def your_projected_normal_logpdf(
+    mean: Float[Array, "3"],
+    cov: Float[Array, "3 3"],
+    unit_vector: Float[Array, "3"]
+) -> Float[Array, ""]:
+    """Your Mills ratio approach - handles arbitrary μ, Σ."""
+    
+    L = jnp.linalg.cholesky(cov)
+    sigma_inv_mu = jax.scipy.linalg.cho_solve((L, True), mean)
+    sigma_inv_v = jax.scipy.linalg.cho_solve((L, True), unit_vector)
+    
+    numerator = jnp.dot(mean, sigma_inv_v)
+    denominator = jnp.sqrt(jnp.dot(unit_vector, sigma_inv_v))
+    t_statistic = numerator / denominator
+    
+    phi_t = jax.scipy.stats.norm.pdf(t_statistic)
+    big_phi_t = jax.scipy.stats.norm.cdf(t_statistic)
+    ratio_term = big_phi_t / phi_t
+    wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
+    
+    quadratic_form = jnp.dot(mean, sigma_inv_mu)
+    log_det_sigma = 2.0 * jnp.sum(jnp.log(jnp.diag(L)))
+    gamma_term = jnp.dot(unit_vector, sigma_inv_v)
+    
+    log_normalization = (
+        -0.5 * quadratic_form - 0.5 * log_det_sigma 
+        - 1.5 * jnp.log(2.0 * jnp.pi * gamma_term)
+    )
+    
+    return log_normalization + jnp.log(wikipedia_factor)
+
+# Test equivalence for identity covariance case
+@jaxtyped(typechecker=typechecker) 
+def test_equivalence():
+    """Test if methods agree when Σ = I."""
+    mean = jnp.array([1.0, 0.5, -0.3])
+    cov = jnp.eye(3)
+    unit_vector = jnp.array([0.6, 0.8, 0.0])
+    
+    numpyro_result = numpyro_projected_normal_logpdf(mean, unit_vector)
+    your_result = your_projected_normal_logpdf(mean, cov, unit_vector)
+    
+    assert jnp.allclose(numpyro_result, your_result, rtol=1e-6)
+    return numpyro_result, your_result
+test_equivalence()
+
+###
+
 dynamical_system = CR3BP(covariance=1_000_000 * CR3BP().covariance)
 posterior_ensemble = dynamical_system.generate(key)
 gmm = silverman_kde_estimate(posterior_ensemble)
 
-# Now use frame-corrected projected normal
+
 test_angles = jnp.array([10.0, 89.0])  # From Earth perspective
 # result = cr3bp_positional_component_logpdf(0, test_angles, gmm.means[:, :3], gmm.covs[:, :3, :3], gmm.weights)
-
 gmm.positional_logpdf(test_angles)
