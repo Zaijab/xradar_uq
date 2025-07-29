@@ -429,7 +429,6 @@ class GMM(eqx.Module):
     ) -> Float[Array, ""]:
         """Evaluate positional normal PDF at (azimuth, inclination) angles."""
         component_indices = jnp.arange(self.means.shape[0])
-        print("hello")
 
         def single_component_pdf(idx):
             return self.positional_component_pdf(idx, angles)
