@@ -334,7 +334,7 @@ class GMM(eqx.Module):
             - 1.5 * jnp.log(2.0 * jnp.pi * gamma_term)
         )
 
-        # log_wikipedia_factor = jnp.log(wikipedia_factor)
+        log_wikipedia_factor = jnp.log(wikipedia_factor)
 
         return log_normalization + log_wikipedia_factor
 
