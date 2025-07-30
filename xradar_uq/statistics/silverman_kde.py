@@ -304,7 +304,7 @@ class GMM(eqx.Module):
         """CORRECTED implementation matching Wikipedia formula exactly."""
         point = jnp.deg2rad(point)
         mean = self.means[component_idx, :3]
-        mean = mean + jnp.array([0.012150584269940, 0.0, 0.0]) # Shifting means to be Earth centered
+        # mean = mean + jnp.array([0.012150584269940, 0.0, 0.0]) # Shifting means to be Earth centered
         cov = self.covs[component_idx, :3, :3]
         ###
         eigval, eigvec = jnp.linalg.eigh(cov)
