@@ -317,8 +317,8 @@ class GMM(eqx.Module):
         ratio_term = big_phi_t / phi_t  # Φ(T)/φ(T)
 
 
-        log_wikipedia_factor = stable_log_mills_factor(t_statistic)
-        # wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
+        # log_wikipedia_factor = stable_log_mills_factor(t_statistic)
+        wikipedia_factor = ratio_term + t_statistic * (1.0 + t_statistic * ratio_term)
 
         # CORRECTED normalization: Wikipedia formula exactly
         # p = (e^(-½μᵀΣ⁻¹μ)) / (√|Σ| × (2πγᵀΣ⁻¹γ)^(3/2)) × wikipedia_factor
