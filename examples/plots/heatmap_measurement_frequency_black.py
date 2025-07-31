@@ -105,10 +105,10 @@ from matplotlib.colors import LogNorm
 
 norm = LogNorm(vmin=combined_min, vmax=combined_max)
 
-heatmap1 = sns.heatmap(custody_matrix_engmf, 
+heatmap1 = sns.heatmap(custody_matrix_engmf[::-1], 
                       xticklabels=[f"{prop:.0f}%" for prop in maneuver_proportion_percent],
-                      yticklabels=[f"{dv:.1f}" for dv in delta_v_m_s],
-                      annot=np.array(custody_human_engmf), 
+                      yticklabels=[f"{dv:.1f}" for dv in delta_v_m_s[::-1]],
+                      annot=np.array(custody_human_engmf)[::-1], 
                       fmt='', 
                       cmap='plasma',
                       norm=norm,
@@ -118,10 +118,10 @@ heatmap1 = sns.heatmap(custody_matrix_engmf,
                       annot_kws={'fontsize': 14},
                       ax=ax1)
 
-heatmap2 = sns.heatmap(custody_matrix_ukf, 
+heatmap2 = sns.heatmap(custody_matrix_ukf[::-1], 
                       xticklabels=[f"{prop:.0f}%" for prop in maneuver_proportion_percent],
-                      yticklabels=[f"{dv:.1f}" for dv in delta_v_m_s],
-                      annot=np.array(custody_human_ukf), 
+                      yticklabels=[f"{dv:.1f}" for dv in delta_v_m_s[::-1]],
+                      annot=np.array(custody_human_ukf)[::-1], 
                       fmt='', 
                       cmap='plasma',
                       norm=norm,
@@ -248,7 +248,7 @@ for ax in [ax1, ax2]:
 #              fontsize=16, y=0.98, color='white')
 
 plt.tight_layout()
-plt.savefig('figures/custody_maintenance/custody_comparison_heatmap_black.png', dpi=300, bbox_inches='tight', facecolor='black')
+plt.savefig('figures/custody_maintenance/custody_comparison_heatmap_black.png', bbox_inches='tight', facecolor='black')
 
 assert custody_matrix_engmf.shape == (10, 6)
 assert custody_matrix_ukf.shape == (10, 6)
